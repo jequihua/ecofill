@@ -1,0 +1,33 @@
+# Python build, cache and environments
+__pycache__/
+*.py[cod]
+build/
+dist/
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Model weights and checkpoints are never part of this repository
+*.safetensors
+*.ckpt
+*.pt
+*.pth
+*.onnx
+checkpoints/
+models/
+
+# Private inputs and local outputs
+private/
+*.mat
+*.h5
+*.hdf5
+demo-output/
+
+# Editor and OS noise
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

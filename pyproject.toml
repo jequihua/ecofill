@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ecofill"
+version = "0.0.1"
+description = "Explicit, provenance-aware gap filling for environmental time series"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "MIT AND BSD-3-Clause"
+license-files = [
+    "LICENSE",
+    "THIRD_PARTY_NOTICES.md",
+    "src/ecofill/_pypots/LICENSE",
+    "src/ecofill/_hesseflux_LICENSE.txt",
+]
+dependencies = ["numpy>=2.3,<3", "pandas>=2.2,<3"]
+
+[project.optional-dependencies]
+dev = ["PyYAML==6.0.3", "build", "setuptools>=68", "wheel"]
+research = ["scipy==1.17.0", "scikit-learn==1.8.0", "statsmodels==0.14.6", "h5py==3.16.0"]
+foundation = ["timesfm==3.0.2", "torch==2.14.0", "huggingface-hub==1.33.0", "safetensors==0.8.0"]
+deep = ["torch==2.14.0"]
+tabpfn = ["tabpfn==9.0.0", "torch==2.14.0"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ecofill = ["_hesseflux_LICENSE.txt", "_pypots/LICENSE"]
+
+[tool.ruff]
+line-length = 100
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
