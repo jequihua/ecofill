@@ -99,6 +99,12 @@ shows project `manglaria-staging`, region `us-central1`, repository
    config URI/generation/SHA256 and unique run ID. The project, region and immutable
    image are release facts. **Engineer-run, creates resources:**
    `gcloud run jobs replace deploy/cloudrun/manglaria-job.draft.yaml --project=manglaria-staging --region=us-central1`.
+   The command selects the region with `--region=us-central1`; the REST URL uses
+   `locations/us-central1`. Do not add a `run.googleapis.com/region` annotation
+   to the Job YAML. Keep `namespace: manglaria-staging`, the valid project ID.
+   See Google's [ObjectMeta](https://docs.cloud.google.com/run/docs/reference/rest/v1/ObjectMeta)
+   and [Job YAML reference](https://docs.cloud.google.com/run/docs/reference/yaml/v1).
+   These drafts passed offline checks; live server acceptance remains engineer-tested.
    This creates/updates without executing. Resources remain one task/worker,
    4 CPU/16GiB, retries 0 and 4h timeout; application deadline is 13,800 seconds,
    leaving publication time. Writable container files count towards memory.

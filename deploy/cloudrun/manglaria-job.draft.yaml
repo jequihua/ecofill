@@ -5,7 +5,6 @@ metadata:
   name: REPLACE_JOB_NAME
   annotations:
     run.googleapis.com/launch-stage: GA
-    run.googleapis.com/region: us-central1
   namespace: manglaria-staging
 spec:
   template:
