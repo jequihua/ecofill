@@ -19,7 +19,7 @@ spec:
           timeoutSeconds: 14400
           containers:
           - name: ecofill
-            image: us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@REGISTRY_DIGEST_PENDING_PUBLICATION
+            image: us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c
             args:
             - run
             - --config
@@ -36,7 +36,7 @@ spec:
                 memory: 16Gi
             env:
             - name: ECOFILL_IMAGE_DIGEST
-              value: us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@REGISTRY_DIGEST_PENDING_PUBLICATION
+              value: us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c
             - name: ECOFILL_CLOUD_POLICY
               value: /etc/ecofill/policy.json
             volumeMounts:

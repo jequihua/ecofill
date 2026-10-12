@@ -4,8 +4,8 @@
 built-in BigQuery output. A downstream BigQuery load is engineer-owned future work.
 Publication does not create a job, bucket, policy secret or runtime account.
 
-The published tag is `us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill:m017-0d0a16a`. The immutable URI will be recorded in
-[release.json](release.json) after registry publication and readback. Use that URI
+The published tag is `us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill:m017-0d0a16a`. The verified immutable URI is `us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c`;
+[release.json](release.json) records its registry digest and smoke. Use that URI
 in the project drafts, rather than rebuilding or selecting a mutable tag.
 [Artifact Registry console](https://console.cloud.google.com/artifacts/docker/manglaria-staging/us-central1/cloud-run-source-deploy?project=manglaria-staging)
 shows project `manglaria-staging`, region `us-central1`, repository
@@ -13,7 +13,7 @@ shows project `manglaria-staging`, region `us-central1`, repository
 
 1. Clone `https://github.com/jequihua/ecofill.git`, or run `git pull --ff-only origin main`
    from its clean main checkout. Read this guide and [release.json](release.json).
-   Pull its exact immutable URI: `docker pull IMMUTABLE_IMAGE_URI_FROM_RELEASE_RECEIPT`.
+   Pull its exact immutable URI: `docker pull us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c`.
 2. Run the local four-family synthetic test before cloud work. Set `IMAGE` to that
    immutable URI; replace the two absolute mount paths with new owned directories.
    The reader needs only Python 3.12 stdlib. On Linux the output must be writable
@@ -22,7 +22,8 @@ shows project `manglaria-staging`, region `us-central1`, repository
    ```sh
    python examples/operation_demo.py prepare --output operator-inputs
    # Edit config.json: sources -> /inputs/FAMILY.csv; output.uri -> /output.
-   # Keep all input hashes. Set IMAGE to release.json's immutable_image_uri.
+   # Keep all input hashes.
+   IMAGE=us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c
    docker run --rm --network none --read-only --tmpfs /tmp:rw,size=64m,mode=1777 --cpus 4 --memory 12g \
      --mount type=bind,src=ABSOLUTE_INPUTS,dst=/inputs,readonly \
      --mount type=bind,src=ABSOLUTE_OUTPUT,dst=/output "$IMAGE" validate --config /inputs/config.json

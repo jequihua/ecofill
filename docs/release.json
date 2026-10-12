@@ -1,10 +1,10 @@
 {
   "schema": "ecofill.public-release/1",
-  "status": "prepared; publication not yet observed",
+  "status": "published; digest pull and installed synthetic readback passed",
   "human_tag": "us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill:m017-0d0a16a",
-  "immutable_image_uri": null,
-  "registry_digest": null,
-  "public_source_commit": null,
+  "immutable_image_uri": "us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c",
+  "registry_digest": "sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c",
+  "public_source_commit": "ed70f11ea4c6cb0dc489f06a646c2d3423a57300",
   "qualified_local_image_id": "sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c",
   "wheel_sha256": "dd9d760da359f79e6493c65d08db7217c0d03850903842df897c57dbb49d7646",
   "image_platform": "linux/amd64",
@@ -77,8 +77,51 @@
     "src/ecofill/timesfm_adapters.py": "c0c6eee3b2f731d4e5798c3bd07d43ab007a5f475d365d24df06eae8748e6b6c",
     "src/ecofill/uncertainty.py": "b3aee934fe0004cbb72bc89ee074d3d9fdc2f1c0e8fe8eb3d8865e9082e49c8c"
   },
-  "pulled_image_smoke": null,
+  "pulled_image_smoke": {
+    "call_upper_bound": 15,
+    "commands": [
+      {
+        "command": "validate",
+        "status": "valid"
+      },
+      {
+        "command": "plan",
+        "status": null
+      },
+      {
+        "command": "run",
+        "status": "complete"
+      },
+      {
+        "command": "inspect",
+        "status": "complete"
+      }
+    ],
+    "foundation_calls": 0,
+    "immutable_image_uri": "us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c",
+    "implementation_sha256": "073366e265dd191c434081a0d59fa5460347a228da8ae9f9a19e50e645745312",
+    "live_cloud_calls": 0,
+    "planned_gaps": 12,
+    "producer_exited_before_reader": true,
+    "qualified_image_id": "sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c",
+    "readback": {
+      "datasets": 4,
+      "filled_cells": 19,
+      "methods": [
+        "LIN",
+        "RF-X"
+      ],
+      "observations_checked": 2380,
+      "status": "complete"
+    },
+    "reader": "fresh Python 3.12 -I -S stdlib process",
+    "source": "actual public target examples",
+    "status": "passed",
+    "wheel_sha256": "dd9d760da359f79e6493c65d08db7217c0d03850903842df897c57dbb49d7646"
+  },
   "cloud_jobs_executed": 0,
   "bigquery_server_queries": 0,
-  "console": "https://console.cloud.google.com/artifacts/docker/manglaria-staging/us-central1/cloud-run-source-deploy?project=manglaria-staging"
+  "console": "https://console.cloud.google.com/artifacts/docker/manglaria-staging/us-central1/cloud-run-source-deploy?project=manglaria-staging",
+  "source_commit": "0f45a818b3e9bb2444dfc6d8708e81220c1489dc",
+  "registry_issued_digest": true
 }
