@@ -14,13 +14,16 @@ def vpd_kpa_to_hpa(values):
 
 
 def compare_nee(data: SeriesData, *, target: str, sw_in: str, ta: str, vpd: str,
-                max_gap: pd.Timedelta):
-    """Compare offline MDS and linear fills on the same QC-qualified SeriesData."""
+                max_gap: pd.Timedelta, cadence: pd.Timedelta = pd.Timedelta("30min")):
+    """Compare offline MDS and linear fills on the same QC-qualified SeriesData.
+
+    `cadence` declares the existing grid for MDS and must equal the schema cadence.
+    """
     units = {item.name: item.unit for item in data.schema.variables}
     if units.get(target) != "umol CO2 m-2 s-1":
         raise ValueError("NEE must be an interval-mean umol CO2 m-2 s-1 rate")
     mds = execute_mds(data, make_mds_plan(data, MdsPolicy(
-        (target,), sw_in, ta, vpd, max_gap)))
+        (target,), sw_in, ta, vpd, max_gap, cadence=cadence)))
     linear = execute(data, make_plan(data, method="linear", mode="offline", max_gap=max_gap))
     return {"mds_hesseflux": mds, "linear": linear}
 

@@ -1,0 +1,51 @@
+# Engineer-run draft; replace every REPLACE_ input before creation.
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: REPLACE_JOB_NAME
+  annotations:
+    run.googleapis.com/launch-stage: GA
+    run.googleapis.com/region: us-central1
+  namespace: manglaria-staging
+spec:
+  template:
+    spec:
+      taskCount: 1
+      parallelism: 1
+      template:
+        spec:
+          serviceAccountName: REPLACE_RUNTIME_SERVICE_ACCOUNT
+          maxRetries: 0
+          timeoutSeconds: 14400
+          containers:
+          - name: ecofill
+            image: us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@REGISTRY_DIGEST_PENDING_PUBLICATION
+            args:
+            - run
+            - --config
+            - gs://REPLACE_CONFIG_BUCKET/ecofill/configs/test.json
+            - --config-generation
+            - REPLACE_CONFIG_GENERATION
+            - --config-sha256
+            - REPLACE_CONFIG_SHA256
+            - --run-id
+            - REPLACE_UNIQUE_RUN_ID
+            resources:
+              limits:
+                cpu: '4'
+                memory: 16Gi
+            env:
+            - name: ECOFILL_IMAGE_DIGEST
+              value: us-central1-docker.pkg.dev/manglaria-staging/cloud-run-source-deploy/ecofill@REGISTRY_DIGEST_PENDING_PUBLICATION
+            - name: ECOFILL_CLOUD_POLICY
+              value: /etc/ecofill/policy.json
+            volumeMounts:
+            - name: deployment-policy
+              mountPath: /etc/ecofill
+          volumes:
+          - name: deployment-policy
+            secret:
+              secretName: REPLACE_POLICY_SECRET
+              items:
+              - key: REPLACE_PINNED_SECRET_VERSION
+                path: policy.json

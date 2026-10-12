@@ -1,0 +1,9 @@
+{
+  "read_prefixes": ["gs://inputs-bucket/ecofill", "gs://models-bucket/ecofill", "gs://configs-bucket/ecofill"],
+  "output_prefixes": ["gs://outputs-bucket/ecofill"],
+  "tables": ["source-project.dataset.native_table"],
+  "max_transfer_bytes": 1073741824,
+  "max_model_bytes": 2684354560,
+  "max_total_query_bytes": 4294967296,
+  "local_roots": ["/inputs", "/models"]
+}

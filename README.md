@@ -38,9 +38,17 @@ packages for specific methods:
 | `foundation` | timesfm, torch, huggingface-hub, safetensors | TimesFM 2.5 and 3 forecasting |
 | `tabpfn` | tabpfn, torch | TabPFN 3.5 time-indexed backend |
 | `dev` | build, setuptools, wheel, PyYAML | building and testing |
+| `operation` | PyYAML | safe YAML operation configs |
+| `cloud` | BigQuery and Storage clients | bounded ADC cloud transport |
 
 For example `python -m pip install ".[tabpfn]"`. The model extras install code
 only. You must obtain model weights yourself (see [Optional models](#optional-models)).
+
+The [batch operation and cloud guide](docs/operation.md) covers the installed CLI,
+four-family synthetic first run, portable profile export, generation-aware staging,
+public-root Docker build and engineer-run Cloud Run Jobs. Runtime artifacts and
+outputs remain separate from the image. With a read-only root, mount a bounded
+writable `/tmp`; the image uses it for skrub and matplotlib caches.
 
 ## Quick start
 
@@ -144,8 +152,10 @@ Details and the exact pinned checkpoints are in [docs/models.md](docs/models.md)
 - Calibrated intervals assume that calibration and new blocks are
   exchangeable. Separate time blocks do not prove that, and no field coverage
   has been established.
-- Only Windows 10 with CPython 3.12 has been observed. Other platforms and
-  Python versions are untested.
+- Windows 10 with CPython 3.12 and the installed LIN/RF synthetic path on Linux
+  amd64 with the pinned Docker CPython 3.12 toolchain have been observed. Native
+  qualification is recorded separately for an exact image and supplied artifacts;
+  other platforms and Python versions are untested.
 
 ## Documentation
 

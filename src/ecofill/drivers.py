@@ -2,14 +2,76 @@
 
 from dataclasses import dataclass
 import hashlib
+import json
+import sys
 import math
+import pickle
 
 import numpy as np
 import pandas as pd
 
 from .data import SeriesData
-from .gaps import profile_gaps
+from .gaps import profile_gaps, validate_gap_selection
 from .result import ImputationResult
+from .schema import TimeSeriesSchema, VariableSpec
+
+
+class OptionalBackendUnavailable(RuntimeError):
+    """The optional estimator package itself is absent, rather than broken."""
+
+
+def donor_lag_data(data, *, targets, donors, support_segments):
+    """Append fixed donor lags after masking, confined to each donor's original domain.
+
+    Return new SeriesData and a portable feature specification. The caller binds
+    the specification to DriverPolicy.source_identity. No target lags or fills.
+    """
+    variables = {v.name: v for v in data.schema.variables}
+    if not isinstance(targets, tuple) or not targets or any(n not in variables for n in targets):
+        raise ValueError("lag targets must be declared")
+    if not isinstance(donors, tuple) or not donors or len(set(donors)) != len(donors) \
+            or set(support_segments) != set(donors):
+        raise ValueError("ordered donors and their support segments must agree")
+    def descends(name):
+        return name in targets or any(descends(p) for p in variables[name].derived_from)
+    if any(n not in variables or descends(n) for n in donors):
+        raise ValueError("targets and descendants cannot supply donor lags")
+    offsets = sorted({1, *[int(span / data.schema.cadence) for span in
+                          (pd.Timedelta('1h'), pd.Timedelta('24h'))
+                          if span % data.schema.cadence == pd.Timedelta(0)]})
+    raw, masks, specs = data.raw, data.masks, list(data.schema.variables)
+    features = []
+    for donor in donors:
+        segments = support_segments[donor]
+        if not isinstance(segments, tuple) or any(
+                not isinstance(pair, tuple) or len(pair) != 2
+                or any(type(v) is not int for v in pair)
+                or not 0 <= pair[0] < pair[1] <= len(raw) for pair in segments) \
+                or any(a[1] > b[0] for a, b in zip(segments, segments[1:])):
+            raise ValueError("donor support segments must be ordered nonoverlapping grid intervals")
+        values = data.available[donor].to_numpy(dtype=float, na_value=np.nan)
+        for offset in offsets:
+            name = f"{donor}@lag_steps={offset}"
+            if name in raw:
+                raise ValueError("lag feature name already exists")
+            shifted = np.full(len(raw), np.nan)
+            for a, b in segments:
+                if b - a > offset:
+                    shifted[a + offset:b] = values[a:b - offset]
+            inserted = data.mask("inserted").all(axis=1).to_numpy()
+            shifted[inserted] = np.nan
+            raw[name] = shifted
+            for key, mask in masks.items():
+                mask[name] = (np.isfinite(shifted) if key in {"observed", "donor", "raw_present"}
+                              else inserted if key == "inserted" else False)
+            specs.append(VariableSpec(name, variables[donor].unit, "external"))
+            features.append({"name": name, "source": donor, "unit": variables[donor].unit,
+                             "offset_steps": offset, "support_segments": segments,
+                             "support": "masked original QC-passed source at timestamp minus offset"})
+    schema = TimeSeriesSchema(data.schema.cadence, tuple(specs), data.schema.time_policy)
+    extended = SeriesData(raw, schema=schema, **{k: masks[k] for k in
+                          ('observed', 'qc_rejected', 'structural', 'artificial', 'inserted')})
+    return extended, tuple(features)
 
 
 class ExternalInputs:
@@ -69,12 +131,89 @@ class ExternalInputs:
         return self._availability.copy(deep=True)
 
 
+# Defaults are explicit so plans bind all constructor settings of the pinned
+# scikit-learn reference, including settings that callers cannot override.
+_REGRESSION_DEFAULTS = {
+    "rf": (("bootstrap", True), ("ccp_alpha", 0.0), ("criterion", "squared_error"),
+           ("max_depth", 6), ("max_features", 1.0), ("max_leaf_nodes", None),
+           ("max_samples", None), ("min_impurity_decrease", 0.0),
+           ("min_samples_leaf", 2), ("min_samples_split", 2),
+           ("min_weight_fraction_leaf", 0.0), ("monotonic_cst", None),
+           ("n_estimators", 32), ("n_jobs", 1), ("oob_score", False),
+           ("random_state", 0), ("verbose", 0), ("warm_start", False)),
+    "boosting": (("categorical_features", "from_dtype"), ("early_stopping", False),
+                 ("interaction_cst", None), ("l2_regularization", 0),
+                 ("learning_rate", 0.1), ("loss", "squared_error"),
+                 ("max_bins", 255), ("max_depth", None), ("max_features", 1.0),
+                 ("max_iter", 32), ("max_leaf_nodes", 15), ("min_samples_leaf", 20),
+                 ("monotonic_cst", None), ("n_iter_no_change", 10), ("quantile", None),
+                 ("random_state", 0), ("scoring", "loss"), ("tol", 1e-7),
+                 ("validation_fraction", 0.1), ("verbose", 0), ("warm_start", False)),
+    "ols": (),
+}
+_REGRESSION_KEYS = {
+    "rf": {"n_estimators", "max_depth", "min_samples_leaf", "random_state", "n_jobs"},
+    "boosting": {"max_iter", "max_leaf_nodes", "learning_rate", "min_samples_leaf",
+                 "random_state", "early_stopping"},
+    "ols": set(),
+}
+
+
+@dataclass(frozen=True)
+class RegressionParameters:
+    """Immutable bounded tree overrides; no arbitrary estimator kwargs."""
+
+    values: tuple[tuple[str, int | float | bool], ...] = ()
+
+    def __post_init__(self):
+        if not isinstance(self.values, tuple):
+            raise ValueError("regression parameters require an immutable tuple of pairs")
+        allowed = _REGRESSION_KEYS["rf"] | _REGRESSION_KEYS["boosting"]
+        seen, normalized = set(), []
+        for pair in self.values:
+            if not isinstance(pair, tuple) or len(pair) != 2:
+                raise ValueError("regression parameters require an immutable tuple of pairs")
+            key, value = pair
+            if not isinstance(key, str) or key not in allowed or key in seen:
+                raise ValueError("unknown or duplicate regression parameter")
+            seen.add(key)
+            if key == "learning_rate":
+                valid = type(value) in (int, float) and 0 < value <= 1 and math.isfinite(value)
+                value = float(value) if valid else value
+            elif key == "early_stopping":
+                valid = value is False
+            else:
+                valid = type(value) is int
+                if valid:
+                    lower, upper = {"n_estimators": (1, 128), "max_iter": (1, 128),
+                                    "max_depth": (1, 12), "max_leaf_nodes": (2, 15),
+                                    "random_state": (0, 0), "n_jobs": (1, 1)}.get(key, (1, value))
+                    valid = lower <= value <= upper
+            if not valid:
+                raise ValueError(f"invalid or unsafe regression parameter: {key}")
+            normalized.append((key, value))
+        object.__setattr__(self, "values", tuple(sorted(normalized)))
+
+    def effective(self, estimator: str) -> dict:
+        if not isinstance(estimator, str) or estimator not in _REGRESSION_DEFAULTS:
+            raise ValueError("unknown regression estimator")
+        if any(key not in _REGRESSION_KEYS[estimator] for key, _ in self.values):
+            raise ValueError("regression parameter is unsupported for this estimator")
+        return dict(_REGRESSION_DEFAULTS[estimator]) | dict(self.values)
+
+
 @dataclass(frozen=True)
 class RegressionStep:
     target: str
     predictors: tuple[str, ...]
     estimator: str = "ols"
     allow_reconstructed: tuple[str, ...] = ()
+    parameters: RegressionParameters = RegressionParameters()
+
+    def __post_init__(self):
+        if not isinstance(self.parameters, RegressionParameters):
+            raise ValueError("parameters must be an immutable RegressionParameters specification")
+        self.parameters.effective(self.estimator)
 
 
 @dataclass(frozen=True)
@@ -98,6 +237,8 @@ class DriverPolicy:
     mode: str
     novelty: str
     source_identity: str
+    fit_rows: tuple[int, ...] | None = None
+    target_gaps: tuple[tuple[str, int, int], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -106,17 +247,33 @@ class DriverPlan:
     external_fingerprint: str | None
     policy: DriverPolicy
     gaps: tuple[tuple[str, int, int, str | None], ...]
+    policy_fingerprint: str = ""
+
+    def __post_init__(self):
+        # The appended default preserves the original four positional fields.
+        # dataclasses.replace retains this snapshot when replacing the policy.
+        if self.policy_fingerprint == "":
+            policy_record = {key: value for key, value in self.to_dict().items()
+                             if key not in {"data_fingerprint", "external_fingerprint", "gaps",
+                                            "policy_fingerprint"}}
+            fingerprint = hashlib.sha256(json.dumps(policy_record, sort_keys=True,
+                                                     allow_nan=False).encode()).hexdigest()
+            object.__setattr__(self, "policy_fingerprint", fingerprint)
 
     def to_dict(self):
         return {"data_fingerprint": self.data_fingerprint,
                 "external_fingerprint": self.external_fingerprint,
+                "policy_fingerprint": self.policy_fingerprint,
                 "method": "driver_pipeline", "mode": self.policy.mode,
                 "training_interval": [self.policy.training_start, self.policy.training_stop],
+                "fit_rows": None if self.policy.fit_rows is None else list(self.policy.fit_rows),
+                "target_gaps": None if self.policy.target_gaps is None else [list(x) for x in self.policy.target_gaps],
                 "min_overlap": self.policy.min_overlap,
                 "max_gap_seconds": self.policy.max_gap.total_seconds(),
                 "novelty": self.policy.novelty, "source_identity": self.policy.source_identity,
                 "steps": [{"kind": "regression", "target": step.target,
                            "predictors": list(step.predictors), "estimator": step.estimator,
+                           "parameters": step.parameters.effective(step.estimator),
                            "allow_reconstructed": list(step.allow_reconstructed)}
                           if isinstance(step, RegressionStep) else
                           {"kind": "derived", "output": step.output,
@@ -143,6 +300,12 @@ def _validate(data, external, policy):
             or not 0 <= policy.training_start < policy.training_stop <= len(data.raw)
             or type(policy.min_overlap) is not int or policy.min_overlap < 1):
         raise ValueError("invalid training interval or minimum overlap")
+    if policy.fit_rows is not None and (
+            not isinstance(policy.fit_rows, tuple)
+            or any(type(row) is not int or not policy.training_start <= row < policy.training_stop
+                   for row in policy.fit_rows)
+            or any(left >= right for left, right in zip(policy.fit_rows, policy.fit_rows[1:]))):
+        raise ValueError("fit_rows must be immutable sorted unique positions within the training interval")
     if not isinstance(policy.max_gap, pd.Timedelta) or pd.isna(policy.max_gap) or policy.max_gap <= pd.Timedelta(0):
         raise ValueError("max_gap must be positive")
     if not isinstance(policy.steps, tuple) or not policy.steps:
@@ -157,6 +320,9 @@ def _validate(data, external, policy):
             output, parents = step.target, step.predictors
             if step.estimator not in {"ols", "rf", "boosting"}:
                 raise ValueError("unknown regression estimator")
+            if not isinstance(step.parameters, RegressionParameters):
+                raise ValueError("parameters must be an immutable RegressionParameters specification")
+            step.parameters.effective(step.estimator)
         elif isinstance(step, DerivedStep):
             output, parents = step.output, step.parents
             check_derived_step(step, schema, lambda name: schema[name].unit if name in schema
@@ -210,16 +376,19 @@ def make_driver_plan(data: SeriesData, policy: DriverPolicy,
     _validate(data, external, policy)
     outputs = {step.target if isinstance(step, RegressionStep) else step.output
                for step in policy.steps}
+    selected = validate_gap_selection(data, policy.target_gaps, variables=outputs)
     structural = data.mask("structural")
     gaps = tuple((gap.variable, gap.start_pos, gap.stop_pos,
                   "structural_absence" if structural[gap.variable].iloc[gap.start_pos:gap.stop_pos].any()
                   else "gap_exceeds_limit" if gap.duration > policy.max_gap else None)
-                 for gap in profile_gaps(data) if gap.variable in outputs)
+                 for gap in profile_gaps(data) if gap.variable in outputs
+                 and (selected is None or (gap.variable, gap.start_pos, gap.stop_pos) in selected))
     return DriverPlan(data.fingerprint, None if external is None else external.fingerprint,
                       policy, gaps)
 
 
-def _fit_predict(estimator, x_train, y_train, x_predict):
+def _fit_predict(estimator, x_train, y_train, x_predict, parameters=RegressionParameters()):
+    effective = parameters.effective(estimator)
     if estimator == "ols":
         coefficients = np.linalg.lstsq(np.column_stack((np.ones(len(x_train)), x_train)),
                                        y_train, rcond=None)[0]
@@ -227,15 +396,22 @@ def _fit_predict(estimator, x_train, y_train, x_predict):
             "intercept": float(coefficients[0]), "coefficients": coefficients[1:].tolist()}
     try:
         from sklearn.ensemble import HistGradientBoostingRegressor, RandomForestRegressor
-    except ImportError as exc:
-        raise RuntimeError("rf/boosting requires the installed scikit-learn research extra") from exc
-    model = (RandomForestRegressor(n_estimators=32, max_depth=6, min_samples_leaf=2,
-                                   n_jobs=1, random_state=0) if estimator == "rf" else
-             HistGradientBoostingRegressor(max_iter=32, max_leaf_nodes=15,
-                 learning_rate=.1, l2_regularization=0, early_stopping=False,
-                 random_state=0))
+    except ModuleNotFoundError as exc:
+        absent = exc.name == "sklearn" or (exc.name and exc.name.startswith("sklearn.")
+                    and "sklearn" in sys.modules and sys.modules["sklearn"] is None)
+        if not absent:
+            raise
+        raise OptionalBackendUnavailable(
+            "rf/boosting requires the installed scikit-learn research extra") from exc
+    model = (RandomForestRegressor(**effective) if estimator == "rf" else
+             HistGradientBoostingRegressor(**effective))
     model.fit(x_train, y_train)
-    return model.predict(x_predict), {"parameters": model.get_params()}
+    # Bind the actual fitted estimator, rather than treating equal constructor
+    # parameters as proof of equal trained trees. Only the digest is exported;
+    # pickle bytes are neither persisted nor deserialized.
+    fitted_digest = hashlib.sha256(pickle.dumps(model, protocol=5)).hexdigest()
+    return model.predict(x_predict), {"parameters": model.get_params(),
+                                     "fitted_model_sha256": fitted_digest}
 
 
 def execute_driver_plan(data: SeriesData, plan: DriverPlan,
@@ -263,6 +439,7 @@ def execute_driver_plan(data: SeriesData, plan: DriverPlan,
     imputed = pd.DataFrame(False, index=index, columns=columns)
     reconstructed_as_of = pd.DataFrame(None, index=index, columns=columns, dtype=object)
     records = []
+    fit_row_sets = {}
     external_values = None if external is None else external.frame
     external_observed = None if external is None else external.observed
     availability = None if external is None else external.availability
@@ -322,7 +499,11 @@ def execute_driver_plan(data: SeriesData, plan: DriverPlan,
                 continue
             training = []
             labels = []
-            for row in range(policy.training_start, min(policy.training_stop, start) if policy.mode == "causal" else policy.training_stop):
+            positions = []
+            candidates = (policy.fit_rows if policy.fit_rows is not None else
+                          range(policy.training_start, min(policy.training_stop, start)
+                                if policy.mode == "causal" else policy.training_stop))
+            for row in candidates:
                 if not qualified.at[index[row], output]:
                     continue
                 inputs = [donor(name, row, issue if policy.mode == "causal" else index[-1], (), training=True)
@@ -330,6 +511,7 @@ def execute_driver_plan(data: SeriesData, plan: DriverPlan,
                 if all(value is not None for value, _, _ in inputs):
                     training.append([value for value, _, _ in inputs])
                     labels.append(float(available.at[index[row], output]))
+                    positions.append(row)
             if len(training) < policy.min_overlap:
                 reasons.iloc[start:stop, columns.get_loc(output)] = "insufficient_observed_overlap"
                 continue
@@ -358,7 +540,8 @@ def execute_driver_plan(data: SeriesData, plan: DriverPlan,
             try:
                 prediction, parameters = _fit_predict(step.estimator,
                     (x_train - means) / safe_stds, y_train,
-                    (np.array([item[1] for item in pending]) - means) / safe_stds)
+                    (np.array([item[1] for item in pending]) - means) / safe_stds,
+                    step.parameters)
             except Exception as exc:
                 if isinstance(exc, RuntimeError) and "scikit-learn research extra" in str(exc):
                     raise
@@ -367,6 +550,9 @@ def execute_driver_plan(data: SeriesData, plan: DriverPlan,
             if (result.shape != (len(pending),) or result.dtype.kind not in "iuf"
                     or not np.isfinite(result).all()):
                 raise RuntimeError("estimator returned wrong shape or non-real/nonfinite values")
+            row_set = {"positions": positions, "timestamps": [index[row].isoformat() for row in positions]}
+            row_identity = hashlib.sha256(json.dumps(row_set, sort_keys=True).encode()).hexdigest()
+            fit_row_sets[row_identity] = row_set
             for (row, values, inputs, novel), value in zip(pending, result):
                 stamp = index[row]
                 completed.at[stamp, output] = float(value)
@@ -383,13 +569,14 @@ def execute_driver_plan(data: SeriesData, plan: DriverPlan,
                                 "available_as_of": issued.isoformat(),
                                 "training_interval": [policy.training_start, policy.training_stop],
                                 "training_overlap": len(training),
+                                "fit_rows_identity": row_identity,
                                 "training_mean": means.tolist(), "training_std": stds.tolist(),
                                 "training_min": minima.tolist(), "training_max": maxima.tolist(),
                                 "parameters": parameters, "novel_features": novel})
     identity = {"kind": "driver_pipeline", "source_identity": policy.source_identity,
                 "external_source": None if external is None else external.source,
                 "external_units": None if external is None else external.units,
-                "steps": plan.to_dict()["steps"], "cells": records}
+                "steps": plan.to_dict()["steps"], "fit_row_sets": fit_row_sets, "cells": records}
     return ImputationResult(data, plan, completed, states, methods, reasons, imputed,
                             backend_identity=identity)
 

@@ -6,7 +6,8 @@ import math
 import pandas as pd
 
 from .data import SeriesData
-from .gaps import Gap, GapEvent, profile_events, profile_gaps
+from .gaps import (Gap, GapEvent, profile_events, profile_gaps, validate_gap_selection,
+                   validate_support_interval)
 
 
 @dataclass(frozen=True)
@@ -48,6 +49,8 @@ class ImputationPlan:
     state: StateSpaceSpec | None
     gaps: tuple[PlannedGap, ...]
     events: tuple[GapEvent, ...]
+    target_gaps: tuple[tuple[str, int, int], ...] | None = None
+    support_interval: tuple[int, int] | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -58,6 +61,8 @@ class ImputationPlan:
             "period_seconds": None if self.period is None else self.period.total_seconds(),
             "search_periods": self.search_periods,
             "state": None if self.state is None else vars(self.state),
+            "target_gaps": None if self.target_gaps is None else [list(x) for x in self.target_gaps],
+            "support_interval": self.support_interval,
             "gaps": [
                 {
                     "variable": item.gap.variable,
@@ -100,6 +105,8 @@ def make_plan(
     period: pd.Timedelta | None = None,
     search_periods: int | None = None,
     state: StateSpaceSpec | None = None,
+    target_gaps: tuple[tuple[str, int, int], ...] | None = None,
+    support_interval: tuple[int, int] | None = None,
 ) -> ImputationPlan:
     """Plan a named method; no gap is partly filled to satisfy a duration limit."""
     methods = {"persistence", "next", "linear", "seasonal", "state_filter", "state_smoother"}
@@ -126,18 +133,24 @@ def make_plan(
     elif state is not None:
         raise ValueError("state belongs only to state-space methods")
 
+    selected = validate_gap_selection(data, target_gaps)
+    support_start, support_stop = validate_support_interval(data, support_interval)
     available = data.available
     structural = data.mask("structural")
     steps = None if period is None else period.value // data.schema.cadence.value
     planned = []
     for gap in profile_gaps(data):
+        if selected is not None and (gap.variable, gap.start_pos, gap.stop_pos) not in selected:
+            continue
         column = available.columns.get_loc(gap.variable)
         values = available.iloc[:, column]
-        left = gap.start_pos > 0 and pd.notna(values.iloc[gap.start_pos - 1])
-        right = gap.stop_pos < len(values) and pd.notna(values.iloc[gap.stop_pos])
+        left = gap.start_pos > support_start and pd.notna(values.iloc[gap.start_pos - 1])
+        right = gap.stop_pos < support_stop and pd.notna(values.iloc[gap.stop_pos])
         reason = None
         donors = ()
-        if structural.iloc[gap.start_pos:gap.stop_pos, column].any():
+        if gap.start_pos < support_start or gap.stop_pos > support_stop:
+            reason = "outside_support_domain"
+        elif structural.iloc[gap.start_pos:gap.stop_pos, column].any():
             reason = "structural_absence"
         elif gap.duration > max_gap:
             reason = "gap_exceeds_limit"
@@ -145,9 +158,9 @@ def make_plan(
             reason = "insufficient_left_context"
         elif method in {"next", "linear"} and not right:
             reason = "insufficient_right_context"
-        elif method == "state_filter" and not values.iloc[:gap.start_pos].notna().any():
+        elif method == "state_filter" and not values.iloc[support_start:gap.start_pos].notna().any():
             reason = "insufficient_left_context"
-        elif method == "state_smoother" and not values.notna().any():
+        elif method == "state_smoother" and not values.iloc[support_start:support_stop].notna().any():
             reason = "insufficient_observed_support"
         elif method == "seasonal":
             options = []
@@ -155,7 +168,7 @@ def make_plan(
                 candidates = []
                 for multiplier in range(1, search_periods + 1):
                     for donor in (position - multiplier * steps, position + multiplier * steps):
-                        if 0 <= donor < len(values) and (mode == "offline" or donor < gap.start_pos):
+                        if support_start <= donor < support_stop and (mode == "offline" or donor < gap.start_pos):
                             if pd.notna(values.iloc[donor]):
                                 candidates.append(donor)
                 options.append(tuple(candidates))
@@ -169,7 +182,10 @@ def make_plan(
     return ImputationPlan(
         data_fingerprint=data.fingerprint, method=method, mode=mode, max_gap=max_gap,
         period=period, search_periods=search_periods, state=state,
-        gaps=tuple(planned), events=profile_events(data),
+        gaps=tuple(planned), events=tuple(event for event in profile_events(data)
+            if selected is None or any(name in event.variables and start < event.stop_pos and stop > event.start_pos
+                                       for name, start, stop in selected)), target_gaps=target_gaps,
+        support_interval=support_interval,
     )
 
 
@@ -183,6 +199,8 @@ def validate_plan(data: SeriesData, plan: ImputationPlan) -> None:
         expected = make_plan(
             data, method=plan.method, mode=plan.mode, max_gap=plan.max_gap,
             period=plan.period, search_periods=plan.search_periods, state=plan.state,
+            target_gaps=plan.target_gaps,
+            support_interval=plan.support_interval,
         )
         matches = plan == expected
     except (TypeError, ValueError, AttributeError) as exc:

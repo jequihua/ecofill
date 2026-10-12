@@ -12,6 +12,7 @@ from .data import SeriesData
 from .deep import DeepPlan
 from .drivers import DerivedStep, RegressionStep, check_derived_step, evaluate_derived
 from .forecast import ForecastPlan
+from .gaps import profile_gaps
 from .result import ImputationResult
 from .time_indexed import TimeIndexedPlan
 
@@ -35,8 +36,11 @@ class EnsembleRecipe:
     members: tuple[EnsembleMember, ...]
     mode: str
     training: tuple[int, int] | None = None
+    whole_gaps: bool = False
 
     def __post_init__(self):
+        if type(self.whole_gaps) is not bool:
+            raise ValueError("whole_gaps must be boolean")
         if not isinstance(self.members, tuple) or not self.members:
             raise ValueError("recipe requires a nonempty tuple of EnsembleMember")
         for member in self.members:
@@ -64,6 +68,7 @@ class EnsembleRecipe:
 
     def to_dict(self) -> dict:
         return {"mode": self.mode,
+                **({"whole_gaps": True} if self.whole_gaps else {}),
                 "training": None if self.training is None else list(self.training),
                 "members": [{"name": item.name, "method": item.method,
                              "configuration": item.configuration, "weight": float(item.weight)}
@@ -180,7 +185,8 @@ BACKEND_PLANS = (ForecastPlan, TimeIndexedPlan)
 
 # Fitted-model fields of per-cell fit records; timestamps, donors and novelty stay out.
 FIT_KEYS = ("target", "method", "predictors", "training_interval", "training_overlap",
-            "training_mean", "training_std", "training_min", "training_max", "parameters")
+            "training_mean", "training_std", "training_min", "training_max", "parameters",
+            "fit_rows_identity")
 EXPOSED_FITS = {"ols"}
 
 
@@ -191,8 +197,12 @@ def _fitted(backend) -> list:
         if not isinstance(cell, dict) or "parameters" not in cell:
             continue
         if cell.get("method") not in EXPOSED_FITS:
-            raise ValueError(f"fitted identity of {cell.get('method')!r} is not exposed; "
-                             "it cannot be bound to a frozen ensemble recipe")
+            parameters = cell["parameters"]
+            digest = parameters.get("fitted_model_sha256") if isinstance(parameters, dict) else None
+            if (cell.get("method") not in {"rf", "boosting"} or not isinstance(digest, str)
+                    or len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest)):
+                raise ValueError(f"fitted identity of {cell.get('method')!r} is not exposed; "
+                                 "it cannot be bound to a frozen ensemble recipe")
         fit = {key: cell.get(key) for key in FIT_KEYS}
         fits[json.dumps(fit, sort_keys=True, default=str)] = fit
     return [fits[key] for key in sorted(fits)]
@@ -310,9 +320,20 @@ def blend(data: SeriesData, members: dict, recipe: EnsembleRecipe, *,
     results = {item.name: (item, members[item.name].completed, members[item.name].mask("imputed"),
                            members[item.name].unresolved_reasons) for item in recipe.members}
     label = "ensemble:" + recipe.identity[:16]
+    incomplete = set()
+    if recipe.whole_gaps:
+        for gap in profile_gaps(data):
+            if any(not parts[2][gap.variable].iloc[gap.start_pos:gap.stop_pos].all()
+                   for parts in results.values()):
+                incomplete.update((index[row], gap.variable)
+                                  for row in range(gap.start_pos, gap.stop_pos))
     abstained = 0
     for name in primitive_names(data.schema):
         for stamp in index[(~donor[name] & ~structural[name]).to_numpy()]:
+            if (stamp, name) in incomplete:
+                reasons.at[stamp, name] = "whole_gap_member_incomplete"
+                abstained += 1
+                continue
             missing = [f"{key}({reason})" if isinstance(reason := parts[3].at[stamp, name], str) else key
                        for key, parts in sorted(results.items()) if not parts[2].at[stamp, name]]
             if missing:

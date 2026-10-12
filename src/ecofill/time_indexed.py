@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 
 from .data import SeriesData
-from .gaps import profile_gaps
+from .gaps import profile_gaps, validate_gap_selection, validate_support_interval
 from .result import ImputationResult
 
 FEATURE_NAMES = ("elapsed", "day_sin", "day_cos", "week_sin", "week_cos")
@@ -74,13 +74,24 @@ class TimeIndexedPolicy:
     seed: int
     device: str = "cpu"
     mode: str = "offline"
+    external_features: tuple[str, ...] = ()
+    reference_rows: tuple[int, ...] | None = None
+    target_gaps: tuple[tuple[str, int, int], ...] | None = None
+    support_interval: tuple[int, int] | None = None
 
     def to_dict(self) -> dict:
-        return {"targets": list(self.targets),
+        document = {"targets": list(self.targets),
                 "reference_intervals": [list(item) for item in self.reference],
                 "max_reference": self.max_reference, "min_support": self.min_support,
                 "max_gap_seconds": self.max_gap.total_seconds(), "seed": self.seed,
                 "device": self.device, "features": self.features.to_dict(), "selection": SELECTION}
+        if self.external_features or self.reference_rows is not None or self.target_gaps is not None \
+                or self.support_interval is not None:
+            document.update(external_features=list(self.external_features),
+                            external_policy="original QC-passed observations; availability at grid timestamp; no transform",
+                            reference_rows=self.reference_rows, target_gaps=self.target_gaps,
+                            support_interval=self.support_interval)
+        return document
 
 
 @dataclass(frozen=True)
@@ -110,6 +121,7 @@ class TimeIndexedPlan:
     feature_names: tuple[str, ...]
     targets: tuple[TimeIndexedTarget, ...]
     gaps: tuple[TimeIndexedGap, ...]
+    external_units: tuple[tuple[str, str], ...] = ()
 
     def to_dict(self) -> dict:
         """Method settings, reference identity and (data-instance) query gaps, kept separate."""
@@ -120,6 +132,7 @@ class TimeIndexedPlan:
             # Hull of the reference intervals: the rows an ensemble recipe must declare.
             "training_interval": [reference[0][0], reference[-1][1]],
             "policy": self.policy.to_dict(), "feature_names": list(self.feature_names),
+            **({"external_units": dict(self.external_units)} if self.external_units else {}),
             "reference": [{"variable": item.variable, "n_eligible": item.n_eligible,
                            "rows": list(item.rows), "identity": item.identity, "reason": item.reason}
                           for item in self.targets],
@@ -182,6 +195,30 @@ def _validate(data: SeriesData, policy: TimeIndexedPolicy) -> None:
         raise ValueError("seed must be an integer in [0, 2**32)")
     if policy.device not in DEVICES:
         raise ValueError("device must be 'cpu' or 'cuda'")
+    external = policy.external_features
+    if not isinstance(external, tuple) or len(set(external)) != len(external) \
+            or any(not isinstance(name, str) or name not in lineage for name in external):
+        raise ValueError("external features must be unique ordered SeriesData variables")
+    def descends(name):
+        return name in targets or any(descends(parent) for parent in lineage[name])
+    if any(descends(name) for name in external):
+        raise ValueError("targets and descendants cannot be external features")
+    if set(external) & set(FEATURE_NAMES):
+        raise ValueError("external feature names conflict with time features")
+    if policy.reference_rows is not None and (
+            not isinstance(policy.reference_rows, tuple)
+            or any(type(row) is not int or not any(a <= row < b for a, b in reference)
+                   for row in policy.reference_rows)
+            or tuple(sorted(set(policy.reference_rows))) != policy.reference_rows):
+        raise ValueError("reference_rows must be sorted unique positions inside reference intervals")
+
+
+def _features(data, policy):
+    time = policy.features.compute(data.raw.index)
+    if not policy.external_features:
+        return time
+    external = data.available[list(policy.external_features)].to_numpy(dtype=float, na_value=np.nan)
+    return np.column_stack((time, external))
 
 
 def _select(eligible: list[int], cap: int) -> list[int]:
@@ -199,6 +236,10 @@ def _reference_identity(data, policy, name, rows, features, labels) -> str:
     digest = hashlib.sha256(json.dumps({
         "variable": name, "unit": unit, "cadence_ns": data.schema.cadence.value,
         "features": policy.features.to_dict(),
+        **({"external": [(v.name, v.unit) for v in data.schema.variables
+                          if v.name in policy.external_features],
+            "ordered_features": policy.external_features}
+           if policy.external_features else {}),
         "timestamps": [index[row].isoformat() for row in rows],
     }, sort_keys=True).encode())
     digest.update(np.ascontiguousarray(features[rows], dtype="<f8").tobytes())
@@ -212,11 +253,18 @@ def make_time_indexed_plan(data: SeriesData, policy: TimeIndexedPolicy) -> TimeI
     available = data.available
     donor = data.mask("donor")
     structural = data.mask("structural")
-    features = policy.features.compute(data.raw.index)
+    features = _features(data, policy)
+    selected = validate_gap_selection(data, policy.target_gaps, variables=policy.targets)
+    support_start, support_stop = validate_support_interval(data, policy.support_interval)
     positions = [row for start, stop in policy.reference for row in range(start, stop)]
+    positions = [row for row in positions if support_start <= row < support_stop]
+    if policy.reference_rows is not None:
+        retained = set(policy.reference_rows)
+        positions = [row for row in positions if row in retained]
     targets, reasons = [], {}
     for name in policy.targets:
-        eligible = [row for row in positions if donor[name].iat[row]]
+        eligible = [row for row in positions if donor[name].iat[row]
+                    and all(donor[col].iat[row] for col in policy.external_features)]
         rows = _select(eligible, policy.max_reference)
         labels = available[name].to_numpy(dtype=float, na_value=np.nan)
         reasons[name] = None if len(rows) >= policy.min_support else "insufficient_reference_support"
@@ -227,17 +275,27 @@ def make_time_indexed_plan(data: SeriesData, policy: TimeIndexedPolicy) -> TimeI
     for gap in profile_gaps(data):
         if gap.variable not in policy.targets:
             continue
+        if selected is not None and (gap.variable, gap.start_pos, gap.stop_pos) not in selected:
+            continue
         reason = None
-        if structural[gap.variable].iloc[gap.start_pos:gap.stop_pos].any():
+        if gap.start_pos < support_start or gap.stop_pos > support_stop:
+            reason = "outside_support_domain"
+        elif structural[gap.variable].iloc[gap.start_pos:gap.stop_pos].any():
             reason = "structural_absence"
         elif gap.geometry != "bounded":
             reason = "edge_gap_unsupported"
         elif gap.duration > policy.max_gap:
             reason = "gap_exceeds_limit"
+        elif policy.external_features and not donor[list(policy.external_features)] \
+                .iloc[gap.start_pos:gap.stop_pos].to_numpy().all():
+            reason = "external_feature_missing"
         else:
             reason = reasons[gap.variable]
         gaps.append(TimeIndexedGap(gap.variable, gap.start_pos, gap.stop_pos, reason is None, reason))
-    return TimeIndexedPlan(data.fingerprint, policy, FEATURE_NAMES, tuple(targets), tuple(gaps))
+    units = tuple((name, next(v.unit for v in data.schema.variables if v.name == name))
+                  for name in policy.external_features)
+    return TimeIndexedPlan(data.fingerprint, policy, FEATURE_NAMES + policy.external_features,
+                           tuple(targets), tuple(gaps), units)
 
 
 def _backend_identity(backend, device: str) -> dict:
@@ -298,7 +356,7 @@ def execute_time_indexed(data: SeriesData, plan: TimeIndexedPlan, backend) -> Im
     methods = pd.DataFrame(None, index=index, columns=columns, dtype=object)
     reasons = pd.DataFrame(None, index=index, columns=columns, dtype=object)
     imputed = pd.DataFrame(False, index=index, columns=columns)
-    features = policy.features.compute(index)
+    features = _features(data, policy)
     predictions, requests = [], []
     for target in plan.targets:
         col = columns.get_loc(target.variable)

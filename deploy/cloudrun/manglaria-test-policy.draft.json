@@ -1,0 +1,15 @@
+{
+  "read_prefixes": [
+    "gs://REPLACE_CONFIG_BUCKET/ecofill/configs"
+  ],
+  "output_prefixes": [
+    "gs://REPLACE_OUTPUT_BUCKET/ecofill/synthetic-test"
+  ],
+  "tables": [
+    "manglaria-staging.REPLACE_DATASET.REPLACE_SYNTHETIC_TABLE"
+  ],
+  "max_transfer_bytes": 8388608,
+  "max_model_bytes": 4096,
+  "max_total_query_bytes": 33554432,
+  "local_roots": []
+}

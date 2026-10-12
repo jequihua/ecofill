@@ -1,0 +1,22 @@
+{
+  "overrides": {
+    "taskCount": 1,
+    "timeout": "14400s",
+    "containerOverrides": [
+      {
+        "name": "ecofill",
+        "args": [
+          "run",
+          "--config",
+          "gs://REPLACE_CONFIG_BUCKET/ecofill/configs/test.json",
+          "--config-generation",
+          "REPLACE_CONFIG_GENERATION",
+          "--config-sha256",
+          "REPLACE_CONFIG_SHA256",
+          "--run-id",
+          "REPLACE_UNIQUE_RUN_ID"
+        ]
+      }
+    ]
+  }
+}

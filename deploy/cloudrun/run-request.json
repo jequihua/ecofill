@@ -1,0 +1,10 @@
+{
+  "overrides": {
+    "taskCount": 1,
+    "timeout": "14400s",
+    "containerOverrides": [{
+      "name": "ecofill",
+      "args": ["run", "--config", "gs://CONFIG_BUCKET/PREFIX/config.json", "--config-generation", "ACTUAL_GENERATION", "--config-sha256", "ACTUAL_SHA256", "--run-id", "UNIQUE_RUN_ID"]
+    }]
+  }
+}

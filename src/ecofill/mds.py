@@ -32,6 +32,7 @@ class MdsPolicy:
     err: bool = False
     min_samples: int = 2
     sentinel: float = -9999.0
+    cadence: pd.Timedelta = pd.Timedelta("30min")
 
 
 @dataclass(frozen=True)
@@ -60,7 +61,8 @@ class MdsPlan:
             "parameters": {"sw_dev": policy.sw_dev, "ta_dev": policy.ta_dev,
                            "vpd_dev": policy.vpd_dev, "longgap_days": policy.longgap_days,
                            "fullday": policy.fullday, "err": policy.err,
-                           "min_samples": policy.min_samples, "sentinel": policy.sentinel},
+                           "min_samples": policy.min_samples, "sentinel": policy.sentinel,
+                           "cadence_seconds": policy.cadence.total_seconds()},
             "gaps": [{"variable": item.variable, "start_pos": item.start_pos,
                       "stop_pos": item.stop_pos, "eligible": item.eligible,
                       "reason": item.reason} for item in self.gaps],
@@ -77,9 +79,15 @@ def _validate(data, policy):
         raise ValueError("MDS requires SeriesData and MdsPolicy")
     if policy.mode != "offline":
         raise ValueError("mds_hesseflux is offline only")
-    if data.schema.cadence != pd.Timedelta("30min") or len(data.raw) < 2:
-        raise ValueError("mds_hesseflux requires at least two regular 30-minute rows")
+    # The declared cadence must make the reference's half-day, day and week windows
+    # integral sample counts; it declares the existing grid and never resamples.
+    cadence = policy.cadence
+    if (not isinstance(cadence, pd.Timedelta) or pd.isna(cadence) or cadence <= pd.Timedelta(0)
+            or cadence % pd.Timedelta("1min") or pd.Timedelta("12h") % cadence):
+        raise ValueError("cadence must be a positive whole-minute Timedelta dividing 12 hours")
     index = data.raw.index
+    if data.schema.cadence != cadence or len(index) < 2 or ((index[1:] - index[:-1]) != cadence).any():
+        raise ValueError("mds_hesseflux requires at least two regular rows at the declared cadence")
     if len({stamp.utcoffset() for stamp in index}) != 1:
         raise ValueError("mds_hesseflux requires a fixed-offset clock without DST changes")
     names = set(data.raw)

@@ -1,0 +1,39 @@
+apiVersion: run.googleapis.com/v1
+kind: Job
+metadata:
+  name: ecofill
+  annotations:
+    run.googleapis.com/launch-stage: GA
+spec:
+  template:
+    spec:
+      taskCount: 1
+      parallelism: 1
+      template:
+        spec:
+          serviceAccountName: RUNTIME_SERVICE_ACCOUNT
+          maxRetries: 0
+          timeoutSeconds: 14400
+          containers:
+            - name: ecofill
+              image: IMAGE_URI_AT_SHA256_DIGEST
+              args: ["run", "--config", "gs://CONFIG_BUCKET/PREFIX/config.json", "--config-generation", "ACTUAL_GENERATION", "--config-sha256", "ACTUAL_SHA256", "--run-id", "UNIQUE_RUN_ID"]
+              resources:
+                limits:
+                  cpu: "4"
+                  memory: 16Gi
+              env:
+                - name: ECOFILL_IMAGE_DIGEST
+                  value: IMAGE_URI_AT_SHA256_DIGEST
+                - name: ECOFILL_CLOUD_POLICY
+                  value: /etc/ecofill/policy.json
+              volumeMounts:
+                - name: deployment-policy
+                  mountPath: /etc/ecofill
+          volumes:
+            - name: deployment-policy
+              secret:
+                secretName: OPERATOR_DEPLOYMENT_POLICY_SECRET
+                items:
+                  - key: PINNED_SECRET_VERSION
+                    path: policy.json

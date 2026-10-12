@@ -1,0 +1,14 @@
+**
+!pyproject.toml
+!README.md
+!LICENSE
+!THIRD_PARTY_NOTICES.md
+!src/
+!src/**
+!docker/
+!docker/Dockerfile
+!docker/requirements-linux-amd64.lock
+!docker/dependency-inventory.json
+src/**/__pycache__
+src/**/*.pyc
+src/**/*.egg-info

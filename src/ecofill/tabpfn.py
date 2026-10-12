@@ -117,7 +117,7 @@ class TabPFNBackend:
     failed "after-fit" guard means predict is never called.
     """
 
-    def __init__(self, checkpoint, *, device: str = "cpu", stage=None):
+    def __init__(self, checkpoint, *, device: str = "cpu", stage=None, output_observer=None):
         if device not in DEVICES:
             raise ValueError("device must be 'cpu' or 'cuda'")
         versions = _versions()
@@ -133,6 +133,7 @@ class TabPFNBackend:
             "features": "S01 TimeIndexedRequest columns in feature_names order; seed -> random_state",
         }
         self.stage = stage
+        self.output_observer = output_observer
         self.load_record = None
         self.executions = []
         self._native = self._specs = None
@@ -202,6 +203,8 @@ class TabPFNBackend:
         predicting = time.perf_counter()
         output = regressor.predict(query, output_type=SETTINGS["output_type"])
         predicted = time.perf_counter()
+        if self.output_observer is not None:
+            self.output_observer(request, output)
         native = native_evidence(regressor, self._native["torch"])
         check_native(native, self.device, request.seed)
         self.executions.append({

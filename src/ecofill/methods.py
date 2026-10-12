@@ -75,9 +75,11 @@ def execute(data: SeriesData, plan: ImputationPlan) -> ImputationResult:
         elif plan.method in {"state_filter", "state_smoother"}:
             if gap.variable not in state_cache:
                 state_cache[gap.variable] = _local_level(
-                    values, plan.state, smooth=plan.method == "state_smoother"
+                    values[slice(*(plan.support_interval or (0, len(values))))],
+                    plan.state, smooth=plan.method == "state_smoother"
                 )
-            prediction = state_cache[gap.variable][slot]
+            origin = 0 if plan.support_interval is None else plan.support_interval[0]
+            prediction = state_cache[gap.variable][gap.start_pos - origin:gap.stop_pos - origin]
         else:
             raise ValueError(f"unknown planned method: {plan.method}")
         if len(prediction) != gap.n_steps or not np.isfinite(prediction).all():

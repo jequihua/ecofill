@@ -92,12 +92,17 @@ runs a driver → derived → response chain.
 ## 6. Eddy-covariance fluxes with MDS
 
 `MdsPolicy`, `make_mds_plan` and `execute_mds` run the `mds_hesseflux` method
-on a 30-minute grid with a signed flux target and radiation, air temperature
-and VPD in `W m-2`, `degC` and `hPa`. It is offline only.
-`ecofill.ec_recipe.compare_nee` runs MDS and linear side by side, and
+on a regular fixed-offset grid with a signed flux target and radiation, air
+temperature and VPD in `W m-2`, `degC` and `hPa`. It is offline only. Declare
+the grid's cadence with `MdsPolicy(..., cadence=pd.Timedelta("15min"))`; the
+default is 30 minutes and any whole-minute cadence that divides 12 hours is
+accepted. It must equal the schema cadence: nothing is resampled. The plan and
+exported provenance record it as `cadence_seconds`.
+`ecofill.ec_recipe.compare_nee` (with the same optional `cadence`) runs MDS and
+linear side by side, and
 `signed_supported_integral` sums supported interval means and reports covered
 versus total seconds. [examples/ec_mds_demo.py](../examples/ec_mds_demo.py)
-is an editable starting point.
+is an editable starting point; pass `--cadence 60min` for an hourly grid.
 
 ## 7. Forecasting across gaps
 

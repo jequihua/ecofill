@@ -1,0 +1,715 @@
+{
+  "schema": "ecofill.operation/1",
+  "purpose": "non-commercial research",
+  "output": {
+    "uri": "output/synthetic"
+  },
+  "limits": {
+    "max_gaps": 100,
+    "max_method_calls": 100,
+    "max_rows_per_series": 1000,
+    "wall_seconds": 60,
+    "memory_bytes": 67108864,
+    "scratch_bytes": 4194304,
+    "output_bytes": 8388608
+  },
+  "sources": {
+    "flux": {
+      "family": "flux",
+      "uri": "examples/operation/flux.csv",
+      "sha256": "f151ba87ce003f0bc3f271ea4b209516645d175c6861e301585ec752bc0825fe",
+      "identity_column": "site_id",
+      "timestamp_column": "timestamp",
+      "key_column": "primary_key",
+      "cadence_seconds": 1800,
+      "clock": "UTC",
+      "preparation_profile": "manglaria-original-v1",
+      "policy": {
+        "version": "synthetic-v1",
+        "original_evidence": "synthetic.original-observations",
+        "missing_strings": [
+          "",
+          "NA",
+          "NULL"
+        ],
+        "positive_9999": true,
+        "negative_sentinel_fields": []
+      },
+      "instruments": {
+        "SYNTHETIC": {
+          "aliases": [
+            "ALIAS"
+          ],
+          "validity": [
+            "2025-01-01T00:00:00+00:00",
+            "2025-01-13T12:00:00+00:00"
+          ],
+          "exclusions": [],
+          "fields": {
+            "y": {
+              "column": "y",
+              "unit": "C",
+              "unit_regime": "native",
+              "lineage": "flux|SYNTHETIC|y",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-13T12:00:00+00:00"
+                ]
+              ],
+              "qc_column": "qc_y"
+            },
+            "d1": {
+              "column": "d1",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "flux|SYNTHETIC|d1",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-13T12:00:00+00:00"
+                ]
+              ]
+            },
+            "d2": {
+              "column": "d2",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "flux|SYNTHETIC|d2",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-13T12:00:00+00:00"
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "biomet": {
+      "family": "biomet",
+      "uri": "examples/operation/biomet.csv",
+      "sha256": "15522b319509ffb448db09b89c6cd95ab736a18079a5a730c29ab4d61109cb7a",
+      "identity_column": "site_id",
+      "timestamp_column": "timestamp",
+      "key_column": "primary_key",
+      "cadence_seconds": 1800,
+      "clock": "UTC",
+      "preparation_profile": "manglaria-original-v1",
+      "policy": {
+        "version": "synthetic-v1",
+        "original_evidence": "synthetic.original-observations",
+        "missing_strings": [
+          "",
+          "NA",
+          "NULL"
+        ],
+        "positive_9999": true,
+        "negative_sentinel_fields": []
+      },
+      "instruments": {
+        "SYNTHETIC": {
+          "aliases": [
+            "ALIAS"
+          ],
+          "validity": [
+            "2025-01-01T00:00:00+00:00",
+            "2025-01-13T12:00:00+00:00"
+          ],
+          "exclusions": [],
+          "fields": {
+            "y": {
+              "column": "y",
+              "unit": "C",
+              "unit_regime": "native",
+              "lineage": "biomet|SYNTHETIC|y",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-13T12:00:00+00:00"
+                ]
+              ],
+              "qc_column": "qc_y"
+            },
+            "d1": {
+              "column": "d1",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "biomet|SYNTHETIC|d1",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-13T12:00:00+00:00"
+                ]
+              ]
+            },
+            "d2": {
+              "column": "d2",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "biomet|SYNTHETIC|d2",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-13T12:00:00+00:00"
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "ctd": {
+      "family": "ctd",
+      "uri": "examples/operation/ctd.csv",
+      "sha256": "7d852eeae154346fdac0ea1e1e1e5032eec2912a89c467b25c71ef16009ccf57",
+      "identity_column": "station_id",
+      "timestamp_column": "timestamp",
+      "key_column": "primary_key",
+      "cadence_seconds": 3600,
+      "clock": "UTC",
+      "preparation_profile": "manglaria-original-v1",
+      "policy": {
+        "version": "synthetic-v1",
+        "original_evidence": "synthetic.original-observations",
+        "missing_strings": [
+          "",
+          "NA",
+          "NULL"
+        ],
+        "positive_9999": true,
+        "negative_sentinel_fields": []
+      },
+      "instruments": {
+        "SYNTHETIC": {
+          "aliases": [
+            "ALIAS"
+          ],
+          "validity": [
+            "2025-01-01T00:00:00+00:00",
+            "2025-01-26T00:00:00+00:00"
+          ],
+          "exclusions": [],
+          "fields": {
+            "y": {
+              "column": "y",
+              "unit": "C",
+              "unit_regime": "native",
+              "lineage": "ctd|SYNTHETIC|y",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-26T00:00:00+00:00"
+                ]
+              ],
+              "qc_column": "qc_y"
+            },
+            "d1": {
+              "column": "d1",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "ctd|SYNTHETIC|d1",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-26T00:00:00+00:00"
+                ]
+              ]
+            },
+            "d2": {
+              "column": "d2",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "ctd|SYNTHETIC|d2",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-26T00:00:00+00:00"
+                ]
+              ]
+            }
+          }
+        }
+      }
+    },
+    "weather": {
+      "family": "weather",
+      "uri": "examples/operation/weather.csv",
+      "sha256": "0f062c19f3d97bfd3bd460d2d747e309b1d64db79fbece18666f9bf88162fbe1",
+      "identity_column": "station_id",
+      "timestamp_column": "timestamp",
+      "key_column": "primary_key",
+      "cadence_seconds": 3600,
+      "clock": "UTC",
+      "preparation_profile": "manglaria-original-v1",
+      "policy": {
+        "version": "synthetic-v1",
+        "original_evidence": "synthetic.original-observations",
+        "missing_strings": [
+          "",
+          "NA",
+          "NULL"
+        ],
+        "positive_9999": true,
+        "negative_sentinel_fields": []
+      },
+      "instruments": {
+        "SYNTHETIC": {
+          "aliases": [
+            "ALIAS"
+          ],
+          "validity": [
+            "2025-01-01T00:00:00+00:00",
+            "2025-01-26T00:00:00+00:00"
+          ],
+          "exclusions": [],
+          "fields": {
+            "y": {
+              "column": "y",
+              "unit": "C",
+              "unit_regime": "native",
+              "lineage": "weather|SYNTHETIC|y",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-26T00:00:00+00:00"
+                ]
+              ],
+              "qc_column": "qc_y"
+            },
+            "d1": {
+              "column": "d1",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "weather|SYNTHETIC|d1",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-26T00:00:00+00:00"
+                ]
+              ]
+            },
+            "d2": {
+              "column": "d2",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "weather|SYNTHETIC|d2",
+              "derived_from": [],
+              "domains": [
+                [
+                  "2025-01-01T00:00:00+00:00",
+                  "2025-01-26T00:00:00+00:00"
+                ]
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "datasets": {
+    "flux": {
+      "enabled": true,
+      "source": "flux",
+      "instruments": [
+        "SYNTHETIC"
+      ],
+      "interval": [
+        "2025-01-01T00:00:00+00:00",
+        "2025-01-13T12:00:00+00:00"
+      ],
+      "exclusions": [],
+      "fit_exclusions": [],
+      "targets": {
+        "y": {
+          "unit": "C",
+          "unit_regime": "native",
+          "routes": {
+            "short": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 0,
+                "at_most": 7200
+              },
+              "recipe": {
+                "id": "flux-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "medium": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 7200,
+                "at_most": 43200
+              },
+              "recipe": {
+                "id": "flux-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "long": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 43200,
+                "at_most": 604800
+              },
+              "recipe": {
+                "id": "flux-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            }
+          }
+        }
+      }
+    },
+    "biomet": {
+      "enabled": true,
+      "source": "biomet",
+      "instruments": [
+        "SYNTHETIC"
+      ],
+      "interval": [
+        "2025-01-01T00:00:00+00:00",
+        "2025-01-13T12:00:00+00:00"
+      ],
+      "exclusions": [],
+      "fit_exclusions": [],
+      "targets": {
+        "y": {
+          "unit": "C",
+          "unit_regime": "native",
+          "routes": {
+            "short": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 0,
+                "at_most": 7200
+              },
+              "recipe": {
+                "id": "biomet-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "medium": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 7200,
+                "at_most": 43200
+              },
+              "recipe": {
+                "id": "biomet-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "long": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 43200,
+                "at_most": 604800
+              },
+              "recipe": {
+                "id": "biomet-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            }
+          }
+        }
+      }
+    },
+    "ctd": {
+      "enabled": true,
+      "source": "ctd",
+      "instruments": [
+        "SYNTHETIC"
+      ],
+      "interval": [
+        "2025-01-01T00:00:00+00:00",
+        "2025-01-26T00:00:00+00:00"
+      ],
+      "exclusions": [],
+      "fit_exclusions": [],
+      "targets": {
+        "y": {
+          "unit": "C",
+          "unit_regime": "native",
+          "routes": {
+            "short": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 0,
+                "at_most": 7200
+              },
+              "recipe": {
+                "id": "ctd-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "medium": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 7200,
+                "at_most": 43200
+              },
+              "recipe": {
+                "id": "ctd-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "long": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 43200,
+                "at_most": 604800
+              },
+              "recipe": {
+                "id": "ctd-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            }
+          }
+        }
+      }
+    },
+    "weather": {
+      "enabled": true,
+      "source": "weather",
+      "instruments": [
+        "SYNTHETIC"
+      ],
+      "interval": [
+        "2025-01-01T00:00:00+00:00",
+        "2025-01-26T00:00:00+00:00"
+      ],
+      "exclusions": [],
+      "fit_exclusions": [],
+      "targets": {
+        "y": {
+          "unit": "C",
+          "unit_regime": "native",
+          "routes": {
+            "short": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 0,
+                "at_most": 7200
+              },
+              "recipe": {
+                "id": "weather-fixed",
+                "method": "RF-X",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [
+                  {
+                    "source": "weather",
+                    "instrument": "SYNTHETIC",
+                    "field": "d1",
+                    "unit_regime": "native"
+                  },
+                  {
+                    "source": "weather",
+                    "instrument": "SYNTHETIC",
+                    "field": "d2",
+                    "unit_regime": "native"
+                  }
+                ],
+                "parameters": {
+                  "n_estimators": 8,
+                  "max_depth": 4,
+                  "min_samples_leaf": 2,
+                  "seed": 13
+                },
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "medium": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 7200,
+                "at_most": 43200
+              },
+              "recipe": {
+                "id": "weather-fixed",
+                "method": "RF-X",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [
+                  {
+                    "source": "weather",
+                    "instrument": "SYNTHETIC",
+                    "field": "d1",
+                    "unit_regime": "native"
+                  },
+                  {
+                    "source": "weather",
+                    "instrument": "SYNTHETIC",
+                    "field": "d2",
+                    "unit_regime": "native"
+                  }
+                ],
+                "parameters": {
+                  "n_estimators": 8,
+                  "max_depth": 4,
+                  "min_samples_leaf": 2,
+                  "seed": 13
+                },
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "long": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 43200,
+                "at_most": 604800
+              },
+              "recipe": {
+                "id": "weather-fixed",
+                "method": "RF-X",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [
+                  {
+                    "source": "weather",
+                    "instrument": "SYNTHETIC",
+                    "field": "d1",
+                    "unit_regime": "native"
+                  },
+                  {
+                    "source": "weather",
+                    "instrument": "SYNTHETIC",
+                    "field": "d2",
+                    "unit_regime": "native"
+                  }
+                ],
+                "parameters": {
+                  "n_estimators": 8,
+                  "max_depth": 4,
+                  "min_samples_leaf": 2,
+                  "seed": 13
+                },
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "models": {}
+}

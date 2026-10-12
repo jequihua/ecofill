@@ -114,7 +114,7 @@ class TimesFM3Backend:
     """Pinned 3.0 checkpoint for local non-commercial research, CPU only."""
 
     def __init__(self, checkpoint_dir: str | Path, *, context_length: int, max_horizon: int,
-                 joint: bool, purpose: str):
+                 joint: bool, purpose: str, output_observer=None):
         if purpose != "non-commercial research":
             raise ValueError("TimesFM 3 weights require explicit non-commercial research purpose")
         if type(joint) is not bool or type(context_length) is not int or context_length < 1 or type(max_horizon) is not int or max_horizon < 1:
@@ -124,6 +124,7 @@ class TimesFM3Backend:
         self.max_horizon = max_horizon
         self.joint = joint
         self._model = None
+        self.output_observer = output_observer
 
     @property
     def identity(self) -> dict:
@@ -168,6 +169,8 @@ class TimesFM3Backend:
                                          use_symmetric_averaging=False, make_positive=False,
                                          use_znorm=False, padding_mode="none")
             point = np.asarray(output.forecast)
+            if self.output_observer is not None:
+                self.output_observer(request, point)
             if point.shape != (context.shape[1], request.horizon):
                 raise RuntimeError("TimesFM 3 returned an invalid point shape")
             return point.T.copy()

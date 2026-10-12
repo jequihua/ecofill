@@ -1,0 +1,15 @@
+{
+  "transfer_bytes": 1073741824,
+  "decoded_bytes": 536870912,
+  "model_bytes": 2684354560,
+  "max_rows": 250000,
+  "max_pages": 250,
+  "page_rows": 1000,
+  "transport_attempts": 3,
+  "per_query_bytes": 1073741824,
+  "total_query_bytes": 4294967296,
+  "snapshot_utc": "2026-10-11T00:00:00Z",
+  "billing_project": "billing-project",
+  "location": "us-central1",
+  "query_seconds": 3600
+}

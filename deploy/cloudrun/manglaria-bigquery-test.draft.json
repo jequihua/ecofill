@@ -1,0 +1,216 @@
+{
+  "schema": "ecofill.operation/1",
+  "purpose": "non-commercial research",
+  "output": {
+    "uri": "gs://REPLACE_OUTPUT_BUCKET/ecofill/synthetic-test"
+  },
+  "limits": {
+    "max_gaps": 10,
+    "max_method_calls": 10,
+    "max_rows_per_series": 1000,
+    "wall_seconds": 13800,
+    "memory_bytes": 67108864,
+    "scratch_bytes": 4194304,
+    "output_bytes": 8388608
+  },
+  "sources": {
+    "biomet": {
+      "family": "biomet",
+      "uri": "bq://manglaria-staging.REPLACE_DATASET.REPLACE_SYNTHETIC_TABLE",
+      "identity_column": "site_id",
+      "timestamp_column": "timestamp",
+      "key_column": "primary_key",
+      "cadence_seconds": 1800,
+      "clock": "UTC",
+      "preparation_profile": "manglaria-original-v1",
+      "policy": {
+        "version": "synthetic-v1",
+        "original_evidence": "synthetic.original-observations",
+        "missing_strings": [
+          "",
+          "NA",
+          "NULL"
+        ],
+        "positive_9999": true,
+        "negative_sentinel_fields": []
+      },
+      "instruments": {
+        "SYNTHETIC": {
+          "aliases": [
+            "ALIAS"
+          ],
+          "validity": [
+            "REPLACE_SUPPORT_START_UTC",
+            "REPLACE_SUPPORT_END_UTC"
+          ],
+          "exclusions": [],
+          "fields": {
+            "y": {
+              "column": "y",
+              "unit": "C",
+              "unit_regime": "native",
+              "lineage": "biomet|SYNTHETIC|y",
+              "derived_from": [],
+              "domains": [
+                [
+                  "REPLACE_SUPPORT_START_UTC",
+                  "REPLACE_SUPPORT_END_UTC"
+                ]
+              ],
+              "qc_column": "qc_y"
+            },
+            "d1": {
+              "column": "d1",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "biomet|SYNTHETIC|d1",
+              "derived_from": [],
+              "domains": [
+                [
+                  "REPLACE_SUPPORT_START_UTC",
+                  "REPLACE_SUPPORT_END_UTC"
+                ]
+              ]
+            },
+            "d2": {
+              "column": "d2",
+              "unit": "dimensionless",
+              "unit_regime": "native",
+              "lineage": "biomet|SYNTHETIC|d2",
+              "derived_from": [],
+              "domains": [
+                [
+                  "REPLACE_SUPPORT_START_UTC",
+                  "REPLACE_SUPPORT_END_UTC"
+                ]
+              ]
+            }
+          }
+        }
+      },
+      "provenance_columns": [
+        "data_source"
+      ],
+      "bigquery": {
+        "columns": [
+          "primary_key",
+          "site_id",
+          "timestamp",
+          "y",
+          "d1",
+          "d2",
+          "qc_y",
+          "data_source"
+        ],
+        "intervals": [
+          [
+            "REPLACE_SUPPORT_START_UTC",
+            "REPLACE_SUPPORT_END_UTC"
+          ]
+        ]
+      }
+    }
+  },
+  "datasets": {
+    "biomet": {
+      "enabled": true,
+      "source": "biomet",
+      "instruments": [
+        "SYNTHETIC"
+      ],
+      "interval": [
+        "REPLACE_OUTPUT_START_UTC",
+        "REPLACE_OUTPUT_END_UTC"
+      ],
+      "exclusions": [],
+      "fit_exclusions": [],
+      "targets": {
+        "y": {
+          "unit": "C",
+          "unit_regime": "native",
+          "routes": {
+            "short": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 0,
+                "at_most": 7200
+              },
+              "recipe": {
+                "id": "biomet-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "medium": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 7200,
+                "at_most": 43200
+              },
+              "recipe": {
+                "id": "biomet-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            },
+            "long": {
+              "enabled": true,
+              "duration_seconds": {
+                "greater_than": 43200,
+                "at_most": 604800
+              },
+              "recipe": {
+                "id": "biomet-fixed",
+                "method": "LIN",
+                "targets": [
+                  "y"
+                ],
+                "predictors": [],
+                "parameters": {},
+                "evidence_status": "user_configured",
+                "evidence": [
+                  "synthetic.software-only"
+                ]
+              },
+              "fallbacks": []
+            }
+          }
+        }
+      }
+    }
+  },
+  "models": {},
+  "cloud": {
+    "transfer_bytes": 8388608,
+    "decoded_bytes": 2097152,
+    "model_bytes": 4096,
+    "max_rows": 1000,
+    "max_pages": 5,
+    "page_rows": 200,
+    "transport_attempts": 2,
+    "per_query_bytes": 33554432,
+    "total_query_bytes": 33554432,
+    "snapshot_utc": "REPLACE_SNAPSHOT_UTC",
+    "billing_project": "manglaria-staging",
+    "location": "us-central1",
+    "query_seconds": 60
+  }
+}

@@ -67,6 +67,12 @@ def profile_gaps(
     not a count of independent donors or a complete overlap-event segmentation.
     """
     source = frame
+    if isinstance(source, SeriesData):
+        if schema is not None and schema != source.schema:
+            raise ValueError("schema disagrees with SeriesData")
+        cached = getattr(source, "_gap_profile", None)
+        if cached is not None:
+            return cached
     frame, schema = _input(frame, schema)
     missing = frame.isna().to_numpy()
     outage = missing.copy()
@@ -92,7 +98,10 @@ def profile_gaps(
                 shared_variables=tuple(frame.columns[outage[start:stop].all(axis=0)]),
                 geometry=geometry, start_pos=int(start), stop_pos=int(stop),
             ))
-    return tuple(gaps)
+    result = tuple(gaps)
+    if isinstance(source, SeriesData):
+        source._gap_profile = result
+    return result
 
 
 def profile_events(
@@ -100,6 +109,12 @@ def profile_events(
 ) -> tuple[GapEvent, ...]:
     """Report non-structural full channels separately from transient outages."""
     source = frame
+    if isinstance(source, SeriesData):
+        if schema is not None and schema != source.schema:
+            raise ValueError("schema disagrees with SeriesData")
+        cached = getattr(source, "_event_profile", None)
+        if cached is not None:
+            return cached
     frame, schema = _input(frame, schema)
     missing = frame.isna().to_numpy()
     if isinstance(source, SeriesData):
@@ -136,4 +151,36 @@ def profile_events(
                       else _geometry(start, stop, len(frame))), pattern=pattern,
             variables=variables, shared_variables=shared,
         ))
-    return tuple(events)
+    result = tuple(events)
+    if isinstance(source, SeriesData):
+        source._event_profile = result
+    return result
+
+
+def validate_gap_selection(data, selected, *, variables=None):
+    """Validate exact original whole gaps; selecting never changes donor masks."""
+    if selected is None:
+        return None
+    if (not isinstance(selected, tuple)
+            or any(not isinstance(item, tuple) or len(item) != 3
+                   or not isinstance(item[0], str)
+                   or type(item[1]) is not int or type(item[2]) is not int
+                   for item in selected)
+            or len(set(selected)) != len(selected)):
+        raise ValueError("target_gaps must be a tuple of unique (variable, start, stop) gaps")
+    existing = {(gap.variable, gap.start_pos, gap.stop_pos) for gap in profile_gaps(data)}
+    if any(item not in existing or (variables is not None and item[0] not in variables)
+           for item in selected):
+        raise ValueError("target_gaps must select existing whole gaps of the target variables")
+    return frozenset(selected)
+
+
+def validate_support_interval(data, interval):
+    """Resolve an optional observed-context domain without changing source masks."""
+    if interval is None:
+        return 0, len(data.raw)
+    if (not isinstance(interval, tuple) or len(interval) != 2
+            or any(type(value) is not int for value in interval)
+            or not 0 <= interval[0] < interval[1] <= len(data.raw)):
+        raise ValueError("support_interval must be a nonempty half-open row domain")
+    return interval

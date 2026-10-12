@@ -7,7 +7,7 @@ import numpy as np
 import pandas as pd
 
 from .data import SeriesData
-from .gaps import profile_gaps
+from .gaps import profile_gaps, validate_gap_selection, validate_support_interval
 from .result import ImputationResult
 
 
@@ -29,6 +29,11 @@ class ForecastPolicy:
     max_horizon: int
     covariates: tuple[DynamicCovariate, ...] = ()
     static_covariates: tuple[tuple[str, float], ...] = ()
+    target_gaps: tuple[tuple[str, int, int], ...] | None = None
+    support_interval: tuple[int, int] | None = None
+    context_policy: str = "fixed"
+    context_lengths: tuple[int, int] | None = None
+    covariate_issue: str = "gap"
 
 
 @dataclass(frozen=True)
@@ -62,6 +67,11 @@ class ForecastPlan:
                  "reversible": item.reversible} for item in policy.covariates
             ],
             "static_covariates": dict(policy.static_covariates),
+            "target_gaps": None if policy.target_gaps is None else [list(x) for x in policy.target_gaps],
+            "support_interval": policy.support_interval,
+            "context_policy": policy.context_policy,
+            "context_lengths": policy.context_lengths,
+            "covariate_issue": policy.covariate_issue,
             "gaps": [
                 {"start_pos": item.start_pos, "stop_pos": item.stop_pos,
                  "channels": list(item.channels), "n_steps": item.stop_pos - item.start_pos,
@@ -112,6 +122,16 @@ def _validate_policy(data: SeriesData, policy: ForecastPolicy) -> None:
             raise ValueError(f"{name} must be a positive integer")
     if policy.min_support > policy.context_length:
         raise ValueError("min_support cannot exceed context_length")
+    if policy.context_policy not in {"fixed", "adjacent_original"}:
+        raise ValueError("invalid context policy")
+    if policy.covariate_issue not in {"gap", "archive_end"} \
+            or policy.covariate_issue == "archive_end" and policy.mode != "offline":
+        raise ValueError("archive-end covariate availability is offline only")
+    if policy.context_lengths is not None and (
+            not isinstance(policy.context_lengths, tuple) or len(policy.context_lengths) != 2
+            or any(type(n) is not int or not 0 <= n <= policy.context_length
+                   for n in policy.context_lengths)):
+        raise ValueError("context_lengths must bound the left and right contexts")
     if not isinstance(policy.covariates, tuple) or any(not isinstance(c, DynamicCovariate) for c in policy.covariates):
         raise ValueError("covariates must be DynamicCovariate records")
     cov_names = [c.name for c in policy.covariates]
@@ -143,18 +163,39 @@ def _validate_policy(data: SeriesData, policy: ForecastPolicy) -> None:
 def make_forecast_plan(data: SeriesData, policy: ForecastPolicy) -> ForecastPlan:
     """Plan complete aligned target gaps without reading reconstructed values."""
     _validate_policy(data, policy)
+    selected = validate_gap_selection(data, policy.target_gaps, variables=policy.channels)
+    support_start, support_stop = validate_support_interval(data, policy.support_interval)
     available = data.available
     structural = data.mask("structural")
     gaps = [gap for gap in profile_gaps(data) if gap.variable in policy.channels]
     spans = sorted({(gap.start_pos, gap.stop_pos) for gap in gaps})
     planned = []
     for start, stop in spans:
+        if selected is not None and not any((name, start, stop) in selected for name in policy.channels):
+            continue
         matching = {gap.variable for gap in gaps if (gap.start_pos, gap.stop_pos) == (start, stop)}
-        left = tuple(range(max(0, start - policy.context_length), start))
-        right = tuple(range(stop, min(len(available), stop + policy.context_length)))
+        left = tuple(range(max(support_start, start - policy.context_length), start))
+        right = tuple(range(stop, min(support_stop, stop + policy.context_length)))
+        if policy.context_policy == "adjacent_original":
+            columns = list(policy.channels) + [c.name for c in policy.covariates]
+            qualified = data.mask("donor")[columns].all(axis=1).to_numpy()
+            a, b = start, stop
+            while a > max(support_start, start - policy.context_length) and qualified[a - 1]:
+                a -= 1
+            while b < min(support_stop, stop + policy.context_length) and qualified[b]:
+                b += 1
+            left, right = tuple(range(a, start)), tuple(range(stop, b))
+        if policy.context_lengths is not None:
+            lsize, rsize = policy.context_lengths
+            left = left[-lsize:] if lsize else ()
+            right = right[:rsize]
         required = ("forward", "backward") if policy.direction == "blend" else (policy.direction,)
         reason = None
-        if matching != set(policy.channels):
+        if selected is not None and not all((name, start, stop) in selected for name in policy.channels):
+            reason = "not_selected"
+        elif start < support_start or stop > support_stop:
+            reason = "outside_support_domain"
+        elif matching != set(policy.channels):
             reason = "unaligned_target_gap"
         elif structural.iloc[start:stop][list(policy.channels)].to_numpy().any():
             reason = "structural_absence"
@@ -177,6 +218,8 @@ def make_forecast_plan(data: SeriesData, policy: ForecastPolicy) -> ForecastPlan
                 horizon = range(start, stop)
                 for cov in policy.covariates:
                     issue = available.index[start] if direction == "forward" else available.index[stop]
+                    if policy.covariate_issue == "archive_end":
+                        issue = available.index[-1]
                     if cov.available_as_of > issue:
                         reason = "covariate_unavailable_as_of"
                         break
