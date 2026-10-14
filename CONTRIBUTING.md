@@ -10,6 +10,9 @@ Use Python 3.12. Create a virtual environment in the repository root and call
 its interpreter by path in every later command. Then a new shell cannot
 silently use another Python or another ecofill installation.
 
+For regular colleague installs, pinned GitHub installs and installed provenance,
+see [installation](docs/installation.md). The editable setup below is for contributors.
+
 Windows (PowerShell), from the repository root:
 
 ```powershell
@@ -56,18 +59,20 @@ optional extra, and they must keep passing when optional model packages are
 absent. They run the examples and compare their exact output, so update the
 test when you deliberately change an example's output.
 
-## Building a wheel
+## Building a wheel and source distribution
 
 ```powershell
-.venv\Scripts\python.exe -m build --wheel --no-isolation   # Windows
+.venv\Scripts\python.exe -m build --sdist --wheel --no-isolation   # Windows
 ```
 
 ```console
-.venv/bin/python -m build --wheel --no-isolation           # Linux/macOS
+.venv/bin/python -m build --sdist --wheel --no-isolation           # Linux/macOS
 ```
 
-This only produces `dist/ecofill-0.0.1-py3-none-any.whl` using the build tools
-from the `dev` extra. It does not install or test the wheel.
+This produces the wheel and `dist/ecofill-0.0.1.tar.gz` using the build tools
+from the `dev` extra. It does not install or test them; test both from fresh
+environments outside the checkout. The source archive includes package resources
+and licenses; it is not a substitute for the complete public checkout's examples.
 
 ## Testing the installed wheel (optional)
 

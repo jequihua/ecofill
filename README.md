@@ -22,27 +22,20 @@ not established by this repository (see [Limitations](#limitations)).
 
 ## Install
 
-ecofill needs Python 3.12. From a checkout of this repository:
+Use a Python 3.12 virtual environment. From a public checkout, install with its
+interpreter: `python -m pip install .`. For the latest main revision directly
+from GitHub (Git required):
 
 ```console
-python -m pip install .
+python -m pip install "ecofill @ git+https://github.com/jequihua/ecofill.git@main"
 ```
 
-The core install needs only NumPy and pandas. Optional extras add pinned
-packages for specific methods:
-
-| Extra | Adds | Needed for |
-|---|---|---|
-| `research` | scipy, scikit-learn, statsmodels, h5py | random-forest and boosting driver regression |
-| `deep` | torch | BRITS and SAITS |
-| `foundation` | timesfm, torch, huggingface-hub, safetensors | TimesFM 2.5 and 3 forecasting |
-| `tabpfn` | tabpfn, torch | TabPFN 3.5 time-indexed backend |
-| `dev` | build, setuptools, wheel, PyYAML | building and testing |
-| `operation` | PyYAML | safe YAML operation configs |
-| `cloud` | BigQuery and Storage clients | bounded ADC cloud transport |
-
-For example `python -m pip install ".[tabpfn]"`. The model extras install code
-only. You must obtain model weights yourself (see [Optional models](#optional-models)).
+The core needs only NumPy and pandas. The [installation guide](docs/installation.md)
+covers Windows/POSIX environments, local/editable/wheel installs, extras, updates,
+installed provenance and a synthetic installed-CLI first run. Model extras install
+libraries; separately supplied weights retain their own licenses and hashes.
+Main moves over time. For reproducibility, select one full public commit in the
+guide and use that same SHA for the package, extras and example files.
 
 The [batch operation and cloud guide](docs/operation.md) covers the installed CLI,
 four-family synthetic first run, portable profile export, generation-aware staging,
@@ -73,6 +66,7 @@ result = execute(data, plan)
 print(result.completed["temperature"].tolist())
 print(result.states["temperature"].tolist())
 print(result.unresolved_reasons["temperature"].dropna().unique().tolist())
+result.export("quickstart-export")  # A new directory in your current working directory.
 ```
 
 Output:
@@ -85,8 +79,9 @@ Output:
 
 The 45-minute gap is longer than the limit, so it is left whole rather than
 partly filled. `plan.gaps` shows that decision before execution, and
-`result.export(<new directory>)` writes values, masks, per-cell states and a
-JSON provenance record.
+`quickstart-export/` contains values, masks, per-cell states and a JSON provenance
+record. Run the example from your own working directory; the export directory
+must not already exist. Installation and user outputs are separate.
 
 ## A complete workflow
 
@@ -159,6 +154,7 @@ Details and the exact pinned checkpoints are in [docs/models.md](docs/models.md)
 
 ## Documentation
 
+- [docs/installation.md](docs/installation.md): environments, pip installs, extras and installed provenance.
 - [methodology.md](methodology.md): the methods and their references, in brief.
 - [docs/guide.md](docs/guide.md): how to use each part of the API.
 - [docs/models.md](docs/models.md): optional model backends, weights and devices.

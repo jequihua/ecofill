@@ -1,5 +1,9 @@
 # Batch operation and cloud handoff
 
+For a local installed-CLI synthetic first run without Docker, see
+[installation](installation.md#installed-cli-first-run). That guide explicitly
+obtains the public example file; examples are not assumed to ship in the wheel.
+
 For the published image, project drafts and numbered testing steps, see
 [cloud testing](cloud-testing.md) and the [release receipt](release.json).
 

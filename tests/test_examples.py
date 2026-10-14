@@ -59,7 +59,21 @@ def readme_quick_start():
 class ExampleTests(unittest.TestCase):
     def test_readme_quick_start_prints_the_documented_output(self):
         code, output = readme_quick_start()
-        self.assertEqual(run("-c", code).stdout, output)
+        with tempfile.TemporaryDirectory(prefix="ecofill-quickstart-") as scratch:
+            self.assertEqual(run("-c", code, cwd=scratch).stdout, output)
+            consumed = read_export("result", Path(scratch) / "quickstart-export")
+            self.assertEqual(consumed.returncode, 0, consumed.stderr)
+            document = json.loads(consumed.stdout)
+            self.assertEqual(document["raw"]["temperature"],
+                             [20.0, None, None, 23.0, None, None, None, 20.0])
+            self.assertEqual(document["completed"]["temperature"],
+                             [20.0, 21.0, 22.0, 23.0, None, None, None, 20.0])
+            self.assertEqual(document["masks"]["observed"]["temperature"],
+                             [True, False, False, True, False, False, False, True])
+            self.assertEqual(document["masks"]["imputed"]["temperature"],
+                             [False, True, True, False, False, False, False, False])
+            self.assertEqual(document["cells"]["temperature"]["reason"][4:7],
+                             ["gap_exceeds_limit"] * 3)
 
     def test_examples_print_their_documented_json(self):
         for name, expected in EXPECTED.items():
