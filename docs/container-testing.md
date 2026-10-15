@@ -15,17 +15,17 @@ the hash-locked dependencies and their licenses are in `docker/`.
 
 ## POSIX commands
 
-Replace `SELECTED_FULL_PUBLIC_SOURCE_SHA` with the source SHA in the candidate
-receipt (or a deliberately selected source revision for a new, unqualified build).
+The commands select the tested source SHA from the candidate receipt. Choose a
+different full SHA only for a deliberately new, unqualified build.
 Use a new fixture directory for each test. Run from the public checkout:
 
 ```sh
-ecofill_sha=SELECTED_FULL_PUBLIC_SOURCE_SHA
+ecofill_sha=94174ef300d63d0cfeee44191e672f31a2f78390
 git clone https://github.com/jequihua/ecofill.git ecofill-source
 cd ecofill-source
 git checkout "$ecofill_sha"
 image="ecofill:local-${ecofill_sha}"
-docker build --platform linux/amd64 -f docker/Dockerfile -t "$image" .
+docker build --load --platform linux/amd64 -f docker/Dockerfile -t "$image" .
 python -I -S -B docker/qualify_container.py prepare --public . --output candidate-fixture
 inputs="$(pwd)/candidate-fixture/inputs"
 outputs="$(pwd)/candidate-fixture/output"
@@ -86,14 +86,14 @@ Use a clean checkout and a new fixture directory. PowerShell arrays preserve
 mount arguments containing spaces. Stop on each failed Docker exit:
 
 ```powershell
-$ecofillSha = 'SELECTED_FULL_PUBLIC_SOURCE_SHA'
+$ecofillSha = '94174ef300d63d0cfeee44191e672f31a2f78390'
 git clone https://github.com/jequihua/ecofill.git ecofill-source
 if ($LASTEXITCODE) { throw 'clone failed' }
 Set-Location ecofill-source
 git checkout $ecofillSha
 if ($LASTEXITCODE) { throw 'checkout failed' }
 $image = "ecofill:local-$ecofillSha"
-docker build --platform linux/amd64 -f docker/Dockerfile -t $image .
+docker build --load --platform linux/amd64 -f docker/Dockerfile -t $image .
 if ($LASTEXITCODE) { throw 'build failed' }
 python -I -S -B docker/qualify_container.py prepare --public . --output candidate-fixture
 if ($LASTEXITCODE) { throw 'fixture failed' }
@@ -175,3 +175,45 @@ establish server or IAM acceptance. A new BigQuery output table is not implement
 Google testing needs later authorized registry publication and an engineer-owned
 Job image update. Keep existing deployment drafts on their published image until
 that separate step; see [cloud testing](cloud-testing.md).
+
+## Observed local candidate
+
+Both shell workflows above passed against the installed candidate, including
+independent stdlib readback and resolved-snapshot replay. The tested build source is
+`94174ef300d63d0cfeee44191e672f31a2f78390`; the observed local tag is
+`ecofill:m021-94174ef300d6` and Docker's local image ID is
+`sha256:5d0ba05c5aabd0d8cf0e4db668fafff1b119065f006091f482f4ca00998694b5`.
+The wheel SHA256 is `8172889d315c97feedd7aca34cf6ceeb45754a8e5ccd71becaee3ddaab36f965`.
+
+The guide and receipt were finalized in a later documentation commit. Before
+checking out the build source, retain this guide and receipt and identify their
+commit with `git log -1 --format=%H -- docs/container-candidate.json`. The selected
+source contains the earlier preparation receipt; the later guide commit changes
+no image inputs. A fresh local rebuild can have a different wheel/image identity;
+record its own provenance instead of assuming it is the tested local object.
+`--load` makes the result available locally when using a BuildKit container builder.
+
+The 26-case installed-image matrix passed with 19 RF fits; both legacy shell runs
+bring the total to 23 of 30. Three Linux harness-control tests used labelled
+doubles. The two real native producers each loaded each family once, performed
+four TabPFN fits, four predictions and six TimesFM forecasts, and passed separate
+numerical readback. The simple runner also passed seven saved resolved-config
+replays without new inference. Strict U/X/J averages reuse retained constituents.
+Every started qualification container used UID 10001, a read-only root and input
+mounts, no network, four CPUs, 12 GiB RAM and a 256 MiB writable temporary mount.
+
+All 60 allowed model-free launch attempts were accounted for; one incorrect
+image-selector preflight started no container. No native attempt was retried.
+The first cached build retained its result in BuildKit; the second allowed build
+loaded the identical inputs locally. No registry push or live Google call occurred.
+The machine-readable receipt records measured native RSS/time and the remaining
+accounting limitations. This local image has no published candidate registry URI.
+
+The retained native entry points are [native compatibility](../deploy/scripts/native_compatibility.py)
+(`--public /public --models /models --output NEW_OUTPUT`, then `--readback NEW_OUTPUT`)
+and [simple qualification](../docker/qualify_container.py) (`native-simple --models
+/models --legacy-script /public/deploy/scripts/native_compatibility.py --output NEW_OUTPUT`,
+then `readback-native --output NEW_OUTPUT`). They require the same resource policy
+and read-only mounts at `/models/tabpfn35` and `/models/timesfm3`. Every real native
+producer consumes its allowance even on failure; obtain a new explicit allowance
+before running either again. Readback alone uses no model or network.
