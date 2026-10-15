@@ -33,6 +33,8 @@ def export_profile(config, destination, *, input_root, profile, artifact_paths=N
     from .runner import prepare_operation
     identifier(profile)
     original = load_config(config); doc = original.to_dict()
+    if doc['schema'] != 'ecofill.operation/1':
+        raise ValueError('export relocates pinned operation/1 profiles; plan simple configurations directly')
     if 'cloud' in doc or any('://' in s['uri'] for s in doc['sources'].values()):
         raise ValueError('export accepts a local pinned profile')
     root = Path(destination).resolve(); root.mkdir(parents=True, exist_ok=False)

@@ -1,11 +1,19 @@
 # Batch operation and cloud handoff
 
+For selected-source local Docker testing, both shell command paths and the
+candidate's observed qualification, see [container testing](container-testing.md).
+
 For a local installed-CLI synthetic first run without Docker, see
 [installation](installation.md#installed-cli-first-run). That guide explicitly
 obtains the public example file; examples are not assumed to ship in the wheel.
 
 For the published image, project drafts and numbered testing steps, see
 [cloud testing](cloud-testing.md) and the [release receipt](release.json).
+
+For your own CSV with only a file, cadence, targets, method and maximum gap, see
+[simple configuration](simple-operation.md). That candidate format resolves to
+the explicit configuration described here; the published image still expects
+explicit `ecofill.operation/1` files until a reviewed image release.
 
 The installed `ecofill` command fills only declared original gaps using original
 observations. It preserves raw numbers, observation/QC masks, whole-gap decisions,

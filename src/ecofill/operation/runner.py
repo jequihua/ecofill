@@ -16,8 +16,9 @@ import pandas as pd
 from ..data import SeriesData
 from ..schema import TimeSeriesSchema, VariableSpec
 from ..drivers import OptionalBackendUnavailable
-from .config import (CLASSES, ENSEMBLES, canonical, digest, identifier, load_config, resolve_ref, stamp)
-from .preparation import prepare_field, read_source, support_domains
+from .config import (CLASSES, ENSEMBLES, NCR, canonical, digest, identifier, load_config, physical_conflicts,
+                     resolve_ref, stamp)
+from .preparation import check_grid_alignment, file_locator, prepare_field, read_source, support_domains
 from .recipes import native_plan, execute_native, strict_blend
 from .bundle import Writer, BudgetStop, inspect_bundle
 
@@ -103,17 +104,29 @@ class RecordingBackend:
 
 
 def prepare_operation(config, *, source_reader=None):
-    config = load_config(config); doc = config.to_dict(); limits = doc['limits']
+    config = load_config(config)
+    inputs, unavailable = {}, []
+    if config.pending:
+        # Simple input: read each active source once and resolve input facts from those bytes.
+        from .simple import resolve
+        config, inputs, unavailable = resolve(config, source_reader or read_source)
+    doc = config.to_dict(); limits = doc['limits']
+    generic = doc['schema'] == 'ecofill.operation/2'
+    if generic:
+        # Paths, links or spellings of one local file are one physical input (labels never decide).
+        physical_conflicts(doc, file_locator)
     refs = dependency_refs(doc)
     sources = {ref['source'] for ref in refs}
-    inputs, unavailable = {}, []
-    for name in sorted(sources):
+    for name in sorted(sources - set(inputs)):
         try:
             inputs[name] = (source_reader or read_source)(doc['sources'][name], limits)
         except FileNotFoundError:
             unavailable.append(name)
     if sum(len(source.payload) for source in inputs.values()) > limits['scratch_bytes']:
-        raise BudgetStop('scratch_bytes')
+        raise limit_stop('scratch_bytes', 'inputs_exceed_scratch_bytes', 'the active inputs together exceed '
+                         'limits.scratch_bytes; remove or narrow datasets, or raise limits.scratch_bytes')
+    if generic:
+        check_grid_alignment(doc, inputs)
     fields = {}
     for ref in refs:
         if ref['source'] in inputs:
@@ -122,7 +135,9 @@ def prepare_operation(config, *, source_reader=None):
             except FileNotFoundError:
                 unavailable.append(ref['source'])
     if sum(len(pair[0].data.raw) * 512 for pair in fields.values()) > limits['memory_bytes']:
-        raise BudgetStop('memory_bytes_estimate')
+        raise limit_stop('memory_bytes_estimate', 'prepared_inputs_exceed_memory_bytes', 'the conservative estimate '
+                         'of 512 bytes per prepared grid row exceeds limits.memory_bytes; narrow datasets, series or '
+                         'interval, or raise limits.memory_bytes')
     partitions, records = [], []
     for dataset_id, dataset in doc['datasets'].items():
         if not dataset['enabled']:
@@ -222,7 +237,20 @@ def prepare_operation(config, *, source_reader=None):
                 'budget_exceeded': len(records) > limits['max_gaps'] or planned_calls > limits['max_method_calls'],
                 'unavailable_inputs_or_partitions': sorted(set(unavailable)),
                 'partitions': [{'id': p['id'], 'data_fingerprint': p['data'].fingerprint} for p in partitions]}
+    if doc['schema'] == 'ecofill.operation/2':
+        exceeded = {name: {'planned': planned, 'limit': limits[name], 'exceeded': planned > limits[name]}
+                    for name, planned in (('max_gaps', len(records)), ('max_method_calls', planned_calls))}
+        document.update(schema='ecofill.operation.plan/2', resolution=doc.get('resolution'), budget=exceeded | {
+            'advice': None if not document['budget_exceeded'] else 'planned work exceeds limits: narrow datasets, '
+                      'targets or interval, or raise limits.max_gaps / limits.max_method_calls within deployment policy; '
+                      'inputs are never truncated and counters never raised automatically'})
     return OperationPlan(config, canonical(document)), inputs, partitions
+
+
+def limit_stop(name, code, explanation):
+    stop = BudgetStop(name)
+    stop.diagnostic = {'code': code, 'location': '/limits/' + name.removesuffix('_estimate'), 'explanation': explanation}
+    return stop
 
 
 def make_operation_plan(config, *, output=None, source_reader=None):
@@ -231,6 +259,8 @@ def make_operation_plan(config, *, output=None, source_reader=None):
         root = Path(output); root.mkdir(parents=True, exist_ok=False)
         writer = Writer(root, plan.config.to_dict()['limits']['output_bytes'])
         writer.write('config.resolved.json', plan.config.to_dict())
+        if plan.config.authored_json is not None:
+            writer.write('config.authored.json', json.loads(plan.config.authored_json))
         for name, source in inputs.items():
             writer.write('inputs/' + name + '.snapshot', source.payload)
         writer.write('input_manifest.json', plan.to_dict()['inputs'])
@@ -270,8 +300,9 @@ def backend_for(recipe, doc, supplied, cache):
         from ..timesfm_adapters import TimesFM3Backend
         # The joint-capable adapter also dispatches the single U channel once,
         # exactly as the independent wrapper does; share one loaded checkpoint.
+        purpose = NCR if NCR in {doc['purpose'], model.get('purpose')} else doc['purpose']
         value = TimesFM3Backend(Path(model['artifacts'][0]['uri']).parent, context_length=128,
-            max_horizon=336, joint=True, purpose=doc['purpose'])
+            max_horizon=336, joint=True, purpose=purpose)
         value.load()
     cache[key] = value
     return value
@@ -293,7 +324,9 @@ def provenance():
             wheel_hash = hashlib.file_digest(stream, 'sha256').hexdigest()
     package = Path(__file__).resolve().parents[1]
     files = ['operation/config.py', 'operation/cloud_config.py', 'operation/cloud.py', 'operation/deployment.py',
-             'operation/__init__.py', 'operation/cli.py', 'operation/schema.json',
+             'operation/__init__.py', 'operation/cli.py', 'operation/schema.json', 'operation/simple.py',
+             'operation/simple_example.py',
+             'operation/simple.schema.json', 'operation/operation2.schema.json',
              'operation/preparation.py', 'operation/recipes.py', 'operation/runner.py',
              'operation/bundle.py', 'shortlist.py', 'batch.py', 'drivers.py', 'time_indexed.py',
              'forecast.py', 'planning.py', 'methods.py', 'ensemble.py', 'data.py', 'schema.py', 'gaps.py',
@@ -349,10 +382,13 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
             return inspect_bundle(root)
         writer = Writer(root, limits['output_bytes'])
         writer.write('request.json', request, terminal=True)
-    writer.write('config.resolved.json', doc, terminal=True)
+    if config.authored_json is not None:
+        writer.write('config.authored.json', json.loads(config.authored_json), terminal=True)
+    # Pending simple input is resolved from the snapshotted bytes; its resolved config publishes at the end.
+    writer.write('config.expanded.json' if config.pending else 'config.resolved.json', doc, terminal=True)
     began = time.monotonic(); calls = 0; completed_partitions = []; audit = []; cache = {}
     attempted_partitions, published_partitions, secondary_failures = [], [], []
-    status, failure, stopped = 'complete', None, False
+    status, failure, stopped, explained = 'complete', None, False, None
     plan = None
     try:
         if transport is not None:
@@ -496,11 +532,12 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
                     if primary is None and not any(e['final_reason'] == 'budget_exhausted' for e in partition_audit):
                         completed_partitions.append(partition['id'])
     except BudgetStop as exc:
-        status = 'partial'; failure = type(exc).__name__
+        status = 'partial'; failure = type(exc).__name__; explained = getattr(exc, 'diagnostic', None)
     except Exception as exc:
-        status = 'failed'; failure = type(exc).__name__
+        status = 'failed'; failure = type(exc).__name__; explained = getattr(exc, 'diagnostic', None)
     if stopped and status == 'complete':
         status = 'partial'
+    executed = doc if plan is None else plan.config.to_dict()
     prov = implementation | {'config_identity': config.identity, 'purpose': doc['purpose'], 'models': doc['models'],
                            'runtime_backends': runtime, 'failure_type': failure,
                            'secondary_failures': secondary_failures,
@@ -516,9 +553,14 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
                'unresolved_reasons': dict(counts), 'filled_by_method_class': dict(Counter(
                    e['selected_method'] + '/' + e['duration_class'] for e in audit if e['complete'])),
                'elapsed_seconds': time.monotonic() - began, 'natural_gap_accuracy': 'unobserved',
-               'periods': {k: v['interval'] for k, v in doc['datasets'].items() if v['enabled']},
+               'periods': {k: v['interval'] for k, v in executed['datasets'].items() if v['enabled']},
                'output': 'manifest.json', 'failure_type': failure}
+    if doc['schema'] == 'ecofill.operation/2':
+        summary.update(resolved_config_identity=None if plan is None else plan.config.identity,
+                       failure_diagnostic=explained)
     try:
+        if config.pending:
+            writer.write('config.resolved.json', executed, terminal=True)
         writer.write('provenance.json', prov, terminal=True)
         writer.finish(status, summary)
     except Exception as publication:

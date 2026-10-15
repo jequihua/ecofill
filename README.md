@@ -37,6 +37,16 @@ libraries; separately supplied weights retain their own licenses and hashes.
 Main moves over time. For reproducibility, select one full public commit in the
 guide and use that same SHA for the package, extras and example files.
 
+The [simple configuration guide](docs/simple-operation.md) fills gaps in your own
+CSV from a few lines of configuration: file, cadence, target columns, one method
+and a maximum gap. It is candidate support; the published image still expects
+explicit operation/1 configurations until a reviewed image release.
+
+For a local Docker build and synthetic validate/plan/run/inspect with independent
+readback and replay, see [container testing](docs/container-testing.md). The
+[candidate receipt](docs/container-candidate.json) distinguishes its tested source
+and local image from the older published release.
+
 The [batch operation and cloud guide](docs/operation.md) covers the installed CLI,
 four-family synthetic first run, portable profile export, generation-aware staging,
 public-root Docker build and engineer-run Cloud Run Jobs. Runtime artifacts and
@@ -155,6 +165,7 @@ Details and the exact pinned checkpoints are in [docs/models.md](docs/models.md)
 ## Documentation
 
 - [docs/installation.md](docs/installation.md): environments, pip installs, extras and installed provenance.
+- [docs/simple-operation.md](docs/simple-operation.md): simple configuration, defaults, diagnostics and replay.
 - [methodology.md](methodology.md): the methods and their references, in brief.
 - [docs/guide.md](docs/guide.md): how to use each part of the API.
 - [docs/models.md](docs/models.md): optional model backends, weights and devices.

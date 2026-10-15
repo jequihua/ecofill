@@ -33,7 +33,8 @@ where = ["src"]
 ecofill = "ecofill.operation.cli:main"
 
 [tool.setuptools.package-data]
-ecofill = ["_hesseflux_LICENSE.txt", "_pypots/LICENSE", "operation/schema.json"]
+ecofill = ["_hesseflux_LICENSE.txt", "_pypots/LICENSE", "operation/schema.json",
+           "operation/simple.schema.json", "operation/operation2.schema.json"]
 
 [tool.ruff]
 line-length = 100

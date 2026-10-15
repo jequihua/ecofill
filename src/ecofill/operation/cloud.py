@@ -346,11 +346,14 @@ class CloudTransport:
         cloud = self.doc['cloud']
         if source['uri'].startswith('gs://'):
             remaining = min(cloud['transfer_bytes'] - self.transferred, limits['scratch_bytes'])
-            payload, generation = self.fetch(source['uri'], source['generation'], source['sha256'], remaining)
+            # Simple input may omit hash/generation: the actual generation is captured and pinned,
+            # and the downloaded bytes are hashed before use. Supplied expectations still apply.
+            payload, generation = self.fetch(source['uri'], source.get('generation'), source.get('sha256'), remaining)
             self.transferred += len(payload)
             bounded = limits | {'scratch_bytes': min(limits['scratch_bytes'], cloud['decoded_bytes']),
                                 'max_rows_per_series': min(limits['max_rows_per_series'], cloud['max_rows'])}
-            result = decode_source(source, bounded, payload, compressed=source['uri'].endswith('.gz'),
+            result = decode_source(source, bounded, payload,
+                                   compressed=source.get('compressed', source['uri'].endswith('.gz')),
                                    receipt={'uri': source['uri'], 'generation': generation})
             if result.receipt['rows'] > cloud['max_rows']:
                 raise BudgetStop('GCS total source row ceiling')

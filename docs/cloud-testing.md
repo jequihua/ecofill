@@ -1,5 +1,9 @@
 # Test the published ecofill runner
 
+For the newer simple configuration workflow, start with [local container testing](container-testing.md)
+and its candidate receipt. That local candidate has no published registry URI;
+the existing drafts below retain the older published image.
+
 **BigQuery input; GCS output.** This is a batch job, with no HTTP service and no
 built-in BigQuery output. A downstream BigQuery load is engineer-owned future work.
 Publication does not create a job, bucket, policy secret or runtime account.

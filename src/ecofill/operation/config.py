@@ -1,8 +1,9 @@
-"""Offline operation/1 validation. Canonical JSON is the execution authority."""
+"""Offline operation/1 and /2 validation. Canonical JSON is the execution authority."""
 from dataclasses import dataclass
 import hashlib
 import json
 import math
+import os
 from pathlib import Path
 import re
 
@@ -11,6 +12,10 @@ import pandas as pd
 CLASSES = {'short': (0, 7200), 'medium': (7200, 43200), 'long': (43200, 604800)}
 METHODS = {'LIN', 'RF-X', 'RF-XL', 'P-U', 'P-X', 'T-U', 'T-X', 'T-J', 'AVG-U', 'AVG-X', 'AVG-J'}
 ENSEMBLES = {'AVG-U': ('P-U', 'T-U'), 'AVG-X': ('P-X', 'T-X'), 'AVG-J': ('P-X', 'T-J')}
+NCR = 'non-commercial research'
+GENERIC = 'generic-v1'
+SCHEMAS = ('ecofill.simple/1', 'ecofill.operation/2', 'ecofill.operation/1')
+SAFE_TEXT = re.compile(r"[A-Za-z0-9 ,./:;'()_=+<>%-]{1,300}")
 
 
 def canonical(value):
@@ -21,37 +26,76 @@ def digest(value):
     return hashlib.sha256(canonical(value).encode()).hexdigest()
 
 
+def pointer(*parts):
+    """JSON-pointer-like location; user keys are bounded and never echoed when unsafe."""
+    names = []
+    for part in parts:
+        part = str(part) if type(part) is int else part
+        if not isinstance(part, str) or not re.fullmatch(r'[A-Za-z0-9 _.()%+-]{1,64}', part):
+            part = '<key>'
+        names.append(part)
+    return '/' + '/'.join(names)
+
+
+def diagnostic(code, location, explanation):
+    """A ValueError carrying a safe, structured, user-correctable explanation."""
+    error = ValueError(explanation)
+    error.diagnostic = {'code': code, 'location': location, 'explanation': explanation}
+    return error
+
+
+def attach(error, code, location):
+    """Add a location to a literal validation message; never echo unsafe text."""
+    if getattr(error, 'diagnostic', None) is None:
+        message = str(error)
+        explanation = message if type(error) is ValueError and SAFE_TEXT.fullmatch(message) else \
+            'invalid value at this location'
+        error.diagnostic = {'code': code, 'location': location, 'explanation': explanation}
+    return error
+
+
 def unique(pairs):
     result = {}
     for key, value in pairs:
         if key in result:
-            raise ValueError('duplicate mapping key')
+            raise diagnostic('duplicate_key', '/', 'duplicate mapping key; every key may appear only once')
         result[key] = value
     return result
 
 
 def read_document(path):
     path = Path(path)
-    text = path.read_text(encoding='utf-8')
+    try:
+        text = path.read_text(encoding='utf-8')
+    except UnicodeDecodeError:
+        raise diagnostic('invalid_encoding', '/', 'configuration must be UTF-8 text') from None
     if path.suffix.lower() not in {'.yaml', '.yml'}:
-        return json.loads(text, object_pairs_hook=unique,
-                          parse_constant=lambda x: (_ for _ in ()).throw(ValueError('nonfinite JSON')))
+        try:
+            return json.loads(text, object_pairs_hook=unique, parse_constant=lambda x: (_ for _ in ()).throw(
+                diagnostic('nonfinite_number', '/', 'NaN and infinity are not valid JSON numbers')))
+        except json.JSONDecodeError as exc:
+            raise diagnostic('invalid_json', '/', f'invalid JSON at line {exc.lineno} column {exc.colno}') from None
     import yaml  # Optional; never imported for JSON/core use.
     class Loader(yaml.SafeLoader):
         def construct_mapping(self, node, deep=False):
             return unique([(self.construct_object(k, deep=True), self.construct_object(v, deep=True))
                            for k, v in node.value])
     # YAML 1.1 yes/no/on/off and implicit dates are ambiguous configuration.
-    for token in yaml.scan(text):
+    try:
+        tokens = list(yaml.scan(text))
+    except yaml.YAMLError:
+        raise diagnostic('invalid_yaml', '/', 'invalid YAML configuration') from None
+    for token in tokens:
         if isinstance(token, yaml.tokens.ScalarToken) and token.plain:
             if token.value.lower() in {'yes', 'no', 'on', 'off'}:
-                raise ValueError('use true/false booleans and quoted timestamps')
+                raise diagnostic('ambiguous_yaml', '/', 'use true/false booleans and quoted timestamps')
     try:
         value = yaml.load(text, Loader=Loader)
         canonical(value)  # Reject implicit dates, cycles, NaN and infinity.
         return value
     except (TypeError, RecursionError, yaml.YAMLError) as exc:
-        raise ValueError('invalid YAML configuration') from exc
+        raise diagnostic('invalid_yaml', '/', 'invalid YAML configuration; quote timestamps and avoid '
+                         'anchors, NaN and infinity') from exc
 
 
 def keys(value, required, optional=()):
@@ -78,7 +122,10 @@ def stamp(value):
     text(value)
     if not re.search(r'(Z|[+-]\d\d:\d\d)$', value):
         raise ValueError('timestamp needs explicit UTC offset')
-    result = pd.Timestamp(value)
+    try:
+        result = pd.Timestamp(value)
+    except (ValueError, TypeError, OverflowError):
+        raise ValueError('invalid timestamp') from None  # Parser text may echo the value.
     if pd.isna(result) or result.tz is None or result.utcoffset().total_seconds() != 0:
         raise ValueError('UTC timestamp required')
     return result
@@ -115,6 +162,13 @@ def resolve_ref(doc, ref):
         source = doc['sources'][ref['source']]
         name = ref['instrument']
         matches = [k for k, v in source['instruments'].items() if name == k or name in v['aliases']]
+        if (not matches and source['preparation_profile'] == GENERIC and set(source['instruments']) == {'*'}
+                and isinstance(name, str) and name):
+            # Pending discovered series: every concrete series shares the template; plan binds it once.
+            spec = source['instruments']['*']['fields'][ref['field']]
+            if spec['unit_regime'] != ref['unit_regime']:
+                raise KeyError('unit regime')
+            return source, name, spec
         if len(matches) != 1:
             raise KeyError(name)
         spec = source['instruments'][matches[0]]['fields'][ref['field']]
@@ -127,7 +181,9 @@ def resolve_ref(doc, ref):
 
 def physical(doc, ref):
     source, instrument, field = resolve_ref(doc, ref)
-    return source['family'], instrument, field.get('physical_field', field['column'])
+    # Generic family metadata is descriptive; its source name scopes physical identity.
+    family = ref['source'] if source['preparation_profile'] == GENERIC else source['family']
+    return family, instrument, field.get('physical_field', field['column'])
 
 
 def donor_identity(doc, ref):
@@ -202,6 +258,9 @@ def parameters(method, values):
 def validate_recipe(doc, recipe, target_ref, targets, *, joint_member=False):
     keys(recipe, ('id', 'method', 'targets', 'predictors', 'parameters', 'evidence_status', 'evidence'),
          ('backend', 'members', 'frozen_recipe', 'frozen_binding'))
+    if 'frozen_recipe' in recipe and not isinstance(recipe['frozen_recipe'], dict):
+        # The shortlist loader reads non-object values as file paths; validation never reads other files.
+        raise ValueError('frozen_recipe must be an inline saved recipe object')
     identifier(recipe['id'])
     method = recipe['method']
     if method not in METHODS:
@@ -263,6 +322,8 @@ def validate_recipe(doc, recipe, target_ref, targets, *, joint_member=False):
             model = doc['models'][recipe['backend']]
             if model['kind'] != ('tabpfn35' if method.startswith('P') else 'timesfm3'):
                 raise ValueError('backend family mismatch')
+            if NCR not in {doc['purpose'], model.get('purpose')}:
+                raise ValueError('restricted model weights require purpose non-commercial research')
         elif 'backend' in recipe:
             raise ValueError('backend unsupported for this method')
     if recipe['evidence_status'] == 'development_selected' and not doc['allow_provisional']:
@@ -303,6 +364,7 @@ def validate_recipe(doc, recipe, target_ref, targets, *, joint_member=False):
 @dataclass(frozen=True)
 class OperationConfig:
     canonical_json: str
+    authored_json: str | None = None  # Simple input as written; None for explicit operation configs.
 
     @property
     def identity(self):
@@ -311,21 +373,73 @@ class OperationConfig:
     def to_dict(self):
         return json.loads(self.canonical_json)
 
+    @property
+    def pending(self):
+        """Simple input whose input-dependent facts are resolved only by plan/run."""
+        return (self.to_dict().get('resolution') or {}).get('status') == 'pending'
+
+
+SIMPLE_KEYS = {'schema', 'datasets', 'output', 'purpose', 'limits', 'models', 'allow_provisional', 'cloud'}
+
+
+def input_format(doc):
+    """Dispatch on explicit schema; only the documented shapes may omit it."""
+    if not isinstance(doc, dict):
+        raise diagnostic('invalid_document', '/', 'configuration must be a JSON or YAML object')
+    if 'schema' in doc:
+        if doc['schema'] not in SCHEMAS:
+            raise diagnostic('unknown_schema', '/schema', 'unknown schema; expected ecofill.simple/1 (concise), '
+                             'ecofill.operation/2 (resolved) or ecofill.operation/1 (strict legacy)')
+        return doc['schema']
+    if set(doc) == {'sources', 'routes', 'output'}:
+        return 'alias'
+    if {'datasets', 'output'} <= set(doc) <= SIMPLE_KEYS:
+        return 'ecofill.simple/1'
+    raise diagnostic('unrecognized_format', '/', f'configuration format not recognized ({len(set(doc) - SIMPLE_KEYS)} '
+                     'unexpected top-level keys): use the concise format with datasets and output (optional schema '
+                     'ecofill.simple/1), the sources/routes/output alias, or an explicit schema ecofill.operation/1 '
+                     'or ecofill.operation/2')
+
 
 def load_config(value):
+    authored = None
     if isinstance(value, OperationConfig):
-        value = value.to_dict()
+        if value.pending:
+            value = json.loads(value.authored_json)
+        else:
+            authored, value = value.authored_json, value.to_dict()
     elif isinstance(value, (str, Path)):
         value = read_document(value)
     try:
         doc = json.loads(canonical(value))
-    except (TypeError, RecursionError) as exc:
-        raise ValueError('configuration must be finite acyclic JSON') from exc
-    keys(doc, ('schema', 'purpose', 'output', 'limits', 'sources', 'datasets', 'models'), ('allow_provisional', 'cloud'))
-    if doc['schema'] != 'ecofill.operation/1' or doc['purpose'] != 'non-commercial research':
-        raise ValueError('operation/1 requires non-commercial research')
+    except (TypeError, RecursionError, ValueError) as exc:
+        raise diagnostic('invalid_document', '/', 'configuration must be finite acyclic JSON') from exc
+    kind = input_format(doc)
+    if kind in {'ecofill.operation/1', 'ecofill.operation/2'}:
+        # An explicit legacy/resolved schema is never reinterpreted as simple input.
+        config = checked(_load_operation1 if kind == 'ecofill.operation/1' else _load_operation2, doc)
+        return config if authored is None else OperationConfig(config.canonical_json, authored)
+    from .simple import expand
+    expanded = expand(doc, kind)
+    return OperationConfig(checked(_load_operation2, expanded, pending=True).canonical_json, canonical(doc))
+
+
+def checked(validate, doc, **options):
+    trail = []
+    try:
+        return validate(doc, trail, **options)
+    except ValueError as error:
+        raise attach(error, 'invalid_configuration', pointer(*trail))
+    except (KeyError, TypeError, AttributeError, IndexError):
+        raise diagnostic('invalid_configuration', pointer(*trail),
+                         'malformed value at this location; check its type and required fields') from None
+
+
+def _validate_envelope(doc, trail):
+    trail[:] = ['allow_provisional']
     if type(doc.setdefault('allow_provisional', False)) is not bool:
         raise ValueError('allow_provisional must be boolean')
+    trail[:] = ['output']
     keys(doc['output'], ('uri',))
     text(doc['output']['uri'])
     if doc['output']['uri'].startswith('gs://'):
@@ -334,18 +448,31 @@ def load_config(value):
     else:
         local_uri(doc['output']['uri'])
     if 'cloud' in doc:
+        trail[:] = ['cloud']
         from .cloud_config import validate_cloud
         validate_cloud(doc['cloud'])
+    trail[:] = ['limits']
     limits = doc['limits']
     keys(limits, ('max_gaps', 'max_method_calls', 'max_rows_per_series', 'wall_seconds', 'memory_bytes', 'scratch_bytes', 'output_bytes'))
     for key, value in limits.items():
+        trail[:] = ['limits', key]
         integer(value, 0 if key in {'max_gaps', 'max_method_calls'} else 1, 2**53-1)
     for block in ('sources', 'models', 'datasets'):
+        trail[:] = [block]
         if not isinstance(doc[block], dict):
             raise ValueError('keyed configuration block required')
         for name in doc[block]:
+            trail[:] = [block, name]
             identifier(name)
-    for source in doc['sources'].values():
+
+
+def _load_operation1(doc, trail):
+    keys(doc, ('schema', 'purpose', 'output', 'limits', 'sources', 'datasets', 'models'), ('allow_provisional', 'cloud'))
+    if doc['schema'] != 'ecofill.operation/1' or doc['purpose'] != 'non-commercial research':
+        raise ValueError('operation/1 requires non-commercial research')
+    _validate_envelope(doc, trail)
+    for source_name, source in doc['sources'].items():
+        trail[:] = ['sources', source_name]
         required = ('family', 'uri', 'identity_column', 'timestamp_column', 'key_column', 'cadence_seconds',
                     'clock', 'preparation_profile', 'policy', 'instruments')
         keys(source, required, ('sha256', 'generation', 'bigquery', 'provenance_columns'))
@@ -379,6 +506,7 @@ def load_config(value):
             raise ValueError('explicit instruments required')
         aliases = set()
         for name, metadata in source['instruments'].items():
+            trail[:] = ['sources', source_name, 'instruments', name]
             text(name)
             keys(metadata, ('aliases', 'validity', 'exclusions', 'fields'))
             interval(metadata['validity']); intervals(metadata['exclusions'])
@@ -391,7 +519,9 @@ def load_config(value):
                 aliases.add(alias)
             if not isinstance(metadata['fields'], dict) or not metadata['fields']:
                 raise ValueError('typed fields required')
+            instrument = name
             for name, field in metadata['fields'].items():
+                trail[:] = ['sources', source_name, 'instruments', instrument, 'fields', name]
                 text(name)
                 keys(field, ('column', 'unit', 'unit_regime', 'lineage', 'derived_from', 'domains'),
                      ('qc_column', 'observed_column', 'rejected_column', 'structural_column', 'route_column', 'route_value', 'physical_field'))
@@ -419,43 +549,62 @@ def load_config(value):
                     raise ValueError('raw physical field must match the measurement column')
                 if ('route_column' in field) != ('route_value' in field):
                     raise ValueError('weather retrieval regime requires column and value')
+        trail[:] = ['sources', source_name]
         validate_source(source, doc.get('cloud'))
-    for model in doc['models'].values():
-        keys(model, ('kind', 'artifacts', 'license', 'revision'))
+    _validate_models(doc, trail)
+    _validate_work(doc, trail)
+    return _finish(doc)
+
+
+def _validate_models(doc, trail, optional=()):
+    for name, model in doc['models'].items():
+        trail[:] = ['models', name]
+        keys(model, ('kind', 'artifacts', 'license', 'revision'), optional)
         if model['kind'] not in {'tabpfn35', 'timesfm3'}:
             raise ValueError('unknown backend kind')
         text(model['license']); text(model['revision'])
+        if 'purpose' in model and model['purpose'] != NCR:
+            raise ValueError('a declared model purpose must be non-commercial research')
         if not isinstance(model['artifacts'], list):
             raise ValueError('artifact list required')
         for artifact in model['artifacts']:
             keys(artifact, ('uri', 'sha256'), ('generation',))
             from .cloud_config import validate_artifact
             validate_artifact(artifact); sha(artifact['sha256'])
+
+
+def _validate_work(doc, trail, *, pending=False):
     work = []
-    for dataset in doc['datasets'].values():
+    for dataset_name, dataset in doc['datasets'].items():
+        trail[:] = ['datasets', dataset_name]
         keys(dataset, ('enabled', 'source', 'instruments', 'interval', 'targets', 'exclusions', 'fit_exclusions'))
         if type(dataset['enabled']) is not bool:
             raise ValueError('enabled must be boolean')
-        interval(dataset['interval']); intervals(dataset['exclusions']); intervals(dataset['fit_exclusions'])
+        open_interval = pending and dataset['interval'] is None  # Simple input: the series extent.
+        if not open_interval:
+            interval(dataset['interval'])
+        intervals(dataset['exclusions']); intervals(dataset['fit_exclusions'])
         if not isinstance(dataset['targets'], dict) or not isinstance(dataset['instruments'], list) or not dataset['instruments']:
             raise ValueError('explicit instruments and targets required')
         if not dataset['enabled']:
             continue
         for instrument in dataset['instruments']:
             for name, target in dataset['targets'].items():
+                trail[:] = ['datasets', dataset_name, 'targets', name]
                 keys(target, ('unit', 'unit_regime', 'routes'))
                 ref = dict(source=dataset['source'], instrument=instrument, field=name, unit_regime=target['unit_regime'])
                 _, _, field = resolve_ref(doc, ref)
                 if target['unit'] != field['unit'] or field['derived_from']:
                     raise ValueError('target unit mismatch or derived target')
                 identity = physical(doc, ref)
-                a, b = map(stamp, dataset['interval'])
-                if any(i == identity and a < y and x < b for i, x, y in work):
+                a, b = (None, None) if open_interval else map(stamp, dataset['interval'])
+                if any(i == identity and (a is None or x is None or a < y and x < b) for i, x, y in work):
                     raise ValueError('duplicate physical target work')
                 work.append((identity, a, b))
                 if not isinstance(target['routes'], dict) or set(target['routes']) - set(CLASSES):
                     raise ValueError('unknown duration class')
                 for cls, route in target['routes'].items():
+                    trail[:] = ['datasets', dataset_name, 'targets', name, 'routes', cls]
                     keys(route, ('enabled',), ('duration_seconds', 'recipe', 'fallbacks', 'reason'))
                     if type(route['enabled']) is not bool:
                         raise ValueError('enabled must be boolean')
@@ -474,13 +623,257 @@ def load_config(value):
                         raise ValueError('bounded explicit fallback list required')
                     for recipe in [route['recipe'], *route['fallbacks']]:
                         validate_recipe(doc, recipe, ref, dataset['targets'])
+
+
+def _finish(doc):
     if (doc['output']['uri'].startswith('gs://') or any(s['uri'].startswith(('gs://', 'bq://')) for s in doc['sources'].values())
             or any(a['uri'].startswith('gs://') for m in doc['models'].values() for a in m['artifacts'])) and 'cloud' not in doc:
         raise ValueError('remote transport requires explicit cloud bounds')
     resolved = canonical(doc)
-    if limits['output_bytes'] < 2 * len(resolved.encode()) + 2 * 65536:
+    if doc['limits']['output_bytes'] < 2 * len(resolved.encode()) + 2 * 65536:
         raise ValueError('output budget cannot retain request/config and terminal control records')
     return OperationConfig(resolved)
+
+
+GENERIC_FIELD = ('column', 'unit', 'unit_regime', 'lineage', 'derived_from', 'domains', 'missing_tokens', 'sentinels')
+GENERIC_OPTIONAL = ('qc_column', 'qc_accept', 'observed_column', 'rejected_column', 'structural_column',
+                    'route_column', 'route_value')
+POLICY = {'version': 'ecofill.generic-preparation/1', 'origin': 'user_supplied', 'original_evidence': 'user_supplied'}
+
+
+def sentinel_rule(rule):
+    if type(rule) in (int, float) and math.isfinite(rule):
+        return
+    if isinstance(rule, dict) and len(rule) == 1 and set(rule) <= {'at_most', 'at_least'}:
+        value = next(iter(rule.values()))
+        if type(value) in (int, float) and math.isfinite(value):
+            return
+    raise ValueError('sentinel rules are finite numbers or {at_most: n} / {at_least: n}')
+
+
+def _load_operation2(doc, trail, *, pending=False):
+    keys(doc, ('schema', 'purpose', 'output', 'limits', 'sources', 'datasets', 'models'),
+         ('allow_provisional', 'cloud', 'resolution'))
+    trail[:] = ['purpose']
+    text(doc['purpose'])
+    trail[:] = ['resolution']
+    resolution = doc.get('resolution', {'status': 'resolved'})
+    keys(resolution, ('status',), ('input_format', 'authored_sha256', 'implementation', 'defaults', 'pending', 'inputs',
+                                   'inactive', 'expanded_identity'))
+    if resolution['status'] not in {'pending', 'resolved'}:
+        raise ValueError('resolution status must be pending or resolved')
+    if (resolution['status'] == 'pending') != pending:
+        raise diagnostic('pending_input_facts', '/resolution', 'this operation/2 document has pending input facts; '
+                         'plan or run its simple configuration to resolve them from the input files')
+    _validate_envelope(doc, trail)
+    for name, source in doc['sources'].items():
+        trail[:] = ['sources', name]
+        _validate_generic_source(name, source, doc.get('cloud'), trail, pending)
+    _validate_models(doc, trail, ('purpose',))
+    _validate_work(doc, trail, pending=pending)
+    physical_conflicts(doc, lexical_locator)
+    return _finish(doc)
+
+
+SEMANTICS = ('unit', 'unit_regime', 'missing_tokens', 'sentinels', 'qc_column', 'qc_accept', 'observed_column',
+             'rejected_column', 'structural_column', 'route_column', 'route_value')
+
+
+def lexical_locator(source):
+    """Transport-aware source identity without I/O: exact gs/bq locators, normalized absolute local paths."""
+    uri = source['uri']
+    if uri.startswith(('gs://', 'bq://')):
+        return uri
+    return 'file:' + os.path.normcase(os.path.abspath(uri))
+
+
+def physical_conflicts(doc, locate):
+    """Generic inputs: labels never define physical identity.
+
+    A physical column is (canonical source, series selector, CSV column). All declarations of one
+    source share one series/clock scheme, all declarations of one column share quality and lineage
+    semantics, targets are not duplicated, and donors are neither a target nor its descendant.
+    """
+    schemes, labels, declared, parents = {}, {}, {}, {}
+    def key_of(ref):
+        source, instrument, field = resolve_ref(doc, ref)
+        selector = instrument if source['identity_column'] is not None else None
+        return (locate(source), selector, field['column'])
+    def contract_key(label):
+        """Resolved lineage labels read '<source>|<series>|<field or CSV column>'; any source or series."""
+        source_name, _, rest = label.partition('|')
+        source = doc['sources'].get(source_name)
+        if source is None:
+            return None
+        series = [i for i in source['instruments'] if rest.startswith(i + '|')]
+        if not series and set(source['instruments']) == {'*'} and '|' in rest:
+            series = [rest.split('|', 1)[0]]  # A named series of a pending discovered grouping.
+        if len(series) > 1:
+            raise diagnostic('ambiguous_lineage_label', pointer('datasets', source_name), 'a lineage label matches '
+                             'more than one series')
+        if not series:
+            return None
+        name = rest[len(series[0]) + 1:]
+        fields = source['instruments'].get(series[0], source['instruments'].get('*', {'fields': {}}))['fields']
+        selector = series[0] if source['identity_column'] is not None else None
+        return (locate(source), selector, fields[name]['column'] if name in fields else name)
+    def parent_key(label):
+        # Declared fields and contract labels resolve to physical columns; anything else is an external leaf.
+        return labels.get(label) or contract_key(label) or ('external', label)
+    for name, source in doc['sources'].items():
+        locator = locate(source)
+        scheme = canonical([source[k] for k in ('identity_column', 'timestamp_column', 'cadence_seconds', 'clock',
+                                                'compressed')])
+        if schemes.setdefault(locator, scheme) != scheme:
+            raise diagnostic('conflicting_source_declarations', pointer('datasets', name), 'the same input is declared '
+                             'more than once with different timestamp, series, cadence, timezone or compression '
+                             'settings; declare it once')
+        for instrument, metadata in source['instruments'].items():
+            selector = instrument if source['identity_column'] is not None else None
+            for field in metadata['fields'].values():
+                key = (locator, selector, field['column'])
+                if labels.setdefault(field['lineage'], key) != key or contract_key(field['lineage']) not in {None, key}:
+                    raise diagnostic('ambiguous_lineage_label', pointer('datasets', name), 'one lineage label names '
+                                     'two different physical columns')
+    for name, source in doc['sources'].items():
+        for instrument, metadata in source['instruments'].items():
+            for column_name, field in metadata['fields'].items():
+                key = labels[field['lineage']]
+                ancestry = sorted({parent_key(p) for p in field['derived_from']}, key=repr)
+                semantics = canonical([{k: field.get(k) for k in SEMANTICS}, ancestry])
+                if declared.setdefault(key, semantics) != semantics:
+                    raise diagnostic('conflicting_physical_declarations', pointer('datasets', name, 'columns', column_name),
+                                     'this physical column is declared elsewhere with different unit, missing-value, '
+                                     'QC, mask, regime or lineage settings; declarations of one column must agree')
+                parents[key] = set(ancestry)
+    def lineage(key, stack=()):
+        if key in stack:
+            raise diagnostic('cyclic_lineage', '/', 'derived_from declarations form a cycle')
+        return {key}.union(*(lineage(p, (*stack, key)) for p in parents.get(key, ())))
+    for key in list(parents):
+        lineage(key)  # Every declared ancestry is acyclic, not only the donors' ancestry.
+    work = []
+    for dataset_name, dataset in doc['datasets'].items():
+        if not dataset['enabled']:
+            continue
+        span = None if dataset['interval'] is None else tuple(map(stamp, dataset['interval']))
+        for instrument in dataset['instruments']:
+            group_keys = {}
+            for target_name, target in dataset['targets'].items():
+                ref = dict(source=dataset['source'], instrument=instrument, field=target_name, unit_regime=target['unit_regime'])
+                key = group_keys[target_name] = key_of(ref)
+                for other, other_span in work:
+                    if other == key and (span is None or other_span is None or span[0] < other_span[1] and other_span[0] < span[1]):
+                        raise diagnostic('duplicate_physical_target', pointer('datasets', dataset_name, 'targets', target_name),
+                                         'this physical column is already a target for an overlapping period under '
+                                         'another name; declare each column once')
+                work.append((key, span))
+            for target_name, target in dataset['targets'].items():
+                for route in target['routes'].values():
+                    recipes = [route['recipe'], *route['fallbacks']] if route['enabled'] else []
+                    for recipe in recipes:
+                        for member in [recipe, *recipe.get('members', [])]:
+                            group = {group_keys[n] for n in member['targets'] if n in group_keys}
+                            seen = set()
+                            for ref in member['predictors']:
+                                donor = key_of(ref)
+                                if donor in seen or lineage(donor) & group:
+                                    raise diagnostic('alias_or_descendant_donor', pointer('datasets', dataset_name,
+                                                     'targets', target_name), 'a predictor is the target itself, an '
+                                                     'alias of it, a duplicate donor, or derived from it')
+                                seen.add(donor)
+
+
+def _validate_generic_source(source_name, source, cloud, trail, pending):
+    from .cloud_config import gcs_uri, validate_artifact, validate_source
+    from .simple import zone
+    keys(source, ('family', 'uri', 'identity_column', 'timestamp_column', 'key_column', 'cadence_seconds', 'clock',
+                  'compressed', 'preparation_profile', 'policy', 'instruments'), ('sha256', 'generation', 'bigquery'))
+    if source['preparation_profile'] != GENERIC:
+        raise ValueError('operation/2 supports the generic-v1 profile; project profiles remain operation/1')
+    if source['family'] is not None:
+        text(source['family'])
+    integer(source['cadence_seconds'], 1, 604800)
+    if type(source['compressed']) is not bool:
+        raise ValueError('compressed must be boolean')
+    text(source['timestamp_column'])
+    for k in ('identity_column', 'key_column'):
+        if source[k] is not None:
+            text(source[k])
+    keys(source['clock'], ('timezone',))
+    if source['clock']['timezone'] is not None:
+        zone(source['clock']['timezone'])
+    if source['policy'] != POLICY:
+        raise ValueError('generic preparation policy differs from ecofill.generic-preparation/1')
+    instruments = source['instruments']
+    if not isinstance(instruments, dict) or not instruments:
+        raise ValueError('explicit series required')
+    if '*' in instruments and (not pending or len(instruments) != 1 or source['identity_column'] is None):
+        raise ValueError('a series template belongs only to pending grouped input')
+    for name, metadata in instruments.items():
+        trail[:] = ['sources', source_name, 'instruments', name]
+        text(name)
+        keys(metadata, ('aliases', 'validity', 'exclusions', 'fields'))
+        if metadata['aliases'] != []:
+            raise ValueError('generic series select exact identity values without aliases')
+        open_validity = pending and metadata['validity'] is None
+        if not open_validity:
+            interval(metadata['validity'])
+        intervals(metadata['exclusions'])
+        if not isinstance(metadata['fields'], dict) or not metadata['fields']:
+            raise ValueError('typed fields required')
+        for field_name, field in metadata['fields'].items():
+            trail[:] = ['sources', source_name, 'instruments', name, 'fields', field_name]
+            text(field_name)
+            keys(field, GENERIC_FIELD, GENERIC_OPTIONAL)
+            for k in ('column', 'unit', 'unit_regime', 'lineage'):
+                text(field[k])
+            for k in ('qc_column', 'observed_column', 'rejected_column', 'structural_column', 'route_column', 'route_value'):
+                if k in field:
+                    text(field[k])
+            if not isinstance(field['derived_from'], list) or any(not isinstance(x, str) for x in field['derived_from']):
+                raise ValueError('explicit lineage list required')
+            if not (pending and field['domains'] is None):
+                intervals(field['domains'])
+                if not open_validity:
+                    for a, b in field['domains']:
+                        if stamp(a) < stamp(metadata['validity'][0]) or stamp(b) > stamp(metadata['validity'][1]):
+                            raise ValueError('domain exceeds metadata validity')
+            tokens = field['missing_tokens']
+            if not isinstance(tokens, list) or '' not in tokens or len(set(tokens)) != len(tokens) \
+                    or any(not isinstance(x, str) for x in tokens) or len(tokens) > 32:
+                raise ValueError('missing tokens are unique strings including the empty cell')
+            if not isinstance(field['sentinels'], list) or len(field['sentinels']) > 16:
+                raise ValueError('bounded sentinel rule list required')
+            for rule in field['sentinels']:
+                sentinel_rule(rule)
+            if ('qc_column' in field) != ('qc_accept' in field):
+                raise ValueError('a QC column requires its explicit accepted-code set')
+            if 'qc_accept' in field and (not isinstance(field['qc_accept'], list) or not field['qc_accept']
+                    or any(not isinstance(x, str) for x in field['qc_accept'])
+                    or len(set(field['qc_accept'])) != len(field['qc_accept'])):
+                raise ValueError('accepted QC codes must be a nonempty list of unique strings')
+            if ('route_column' in field) != ('route_value' in field):
+                raise ValueError('unit regime selector requires column and value')
+            for parent in field['derived_from']:
+                text(parent)  # Ancestry is metadata; parents may live in other sources/series or be unmeasured.
+    trail[:] = ['sources', source_name]
+    uri = source['uri']
+    if not isinstance(uri, str):
+        raise ValueError('source URI required')
+    if uri.startswith('bq://') or not pending:
+        validate_source(source, cloud)
+    else:
+        if 'bigquery' in source:
+            raise ValueError('contradictory source modes')
+        if 'sha256' in source:
+            sha(source['sha256'])
+        if uri.startswith('gs://'):
+            gcs_uri(uri)
+            if 'generation' in source:
+                integer(source['generation'], 1, 2**63-1)
+        else:
+            validate_artifact({k: v for k, v in source.items() if k in {'uri', 'generation'}})
 
 
 validate = load_config

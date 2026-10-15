@@ -1,0 +1,208 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ecofill:simple:1",
+  "description": "Concise input (schema ecofill.simple/1; the schema key may be omitted for this documented shape) or the narrow sources/routes/output alias. load_config expands either into ecofill.operation/2 and additionally checks durations, timezones, references, joint groups, recipe support, units and model purpose. Unknown keys are errors.",
+  "oneOf": [
+    {"$ref": "#/$defs/simple"},
+    {"$ref": "#/$defs/alias"}
+  ],
+  "$defs": {
+    "duration": {
+      "description": "Positive whole seconds, or text such as 15min, 30min, 2h or 1d.",
+      "oneOf": [
+        {"type": "integer", "minimum": 1},
+        {"type": "string", "pattern": "^[1-9][0-9]{0,6}(s|min|h|d)$"}
+      ]
+    },
+    "instant": {
+      "type": "string",
+      "description": "ISO 8601 with an explicit offset; normalized to UTC.",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}(:\\d{2}(\\.\\d{1,6})?)?(Z|[+-]\\d{2}:\\d{2})$"
+    },
+    "interval": {
+      "type": "array",
+      "description": "Half-open [start, end).",
+      "prefixItems": [{"$ref": "#/$defs/instant"}, {"$ref": "#/$defs/instant"}],
+      "minItems": 2, "maxItems": 2, "items": false
+    },
+    "intervals": {"type": "array", "items": {"$ref": "#/$defs/interval"}, "maxItems": 256},
+    "name": {"type": "string", "minLength": 1, "maxLength": 128},
+    "sentinel": {
+      "oneOf": [
+        {"type": "number"},
+        {"type": "object", "properties": {"at_most": {"type": "number"}}, "required": ["at_most"], "additionalProperties": false},
+        {"type": "object", "properties": {"at_least": {"type": "number"}}, "required": ["at_least"], "additionalProperties": false}
+      ]
+    },
+    "missing": {
+      "type": "object",
+      "description": "Default: empty cells, NaN/inf text and JSON null are unavailable; finite 9999/-9999 are values unless listed here.",
+      "properties": {
+        "tokens": {"type": "array", "items": {"type": "string"}, "maxItems": 31, "uniqueItems": true, "description": "Exact lexical cells read as unavailable."},
+        "sentinels": {"type": "array", "items": {"$ref": "#/$defs/sentinel"}, "maxItems": 16, "description": "Finite values rejected with their raw number retained."}
+      },
+      "additionalProperties": false
+    },
+    "predictor": {
+      "description": "A column name of the same dataset and series, or an explicit identity for another dataset or series.",
+      "oneOf": [
+        {"$ref": "#/$defs/name"},
+        {
+          "type": "object",
+          "properties": {
+            "dataset": {"$ref": "#/$defs/name"},
+            "column": {"$ref": "#/$defs/name"},
+            "series": {"$ref": "#/$defs/name", "description": "Required for another dataset with group_by."},
+            "unit_regime": {"$ref": "#/$defs/name"}
+          },
+          "required": ["column"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "recipe": {
+      "type": "object",
+      "description": "One method. P/T methods name a declared model in backend; AVG methods use backend {P, T}. Saved recipes add frozen_recipe, frozen_binding, evidence_status, evidence and id and keep their frozen settings.",
+      "properties": {
+        "method": {"enum": ["AVG-J", "AVG-U", "AVG-X", "LIN", "P-U", "P-X", "RF-X", "RF-XL", "T-J", "T-U", "T-X"]},
+        "max_gap": {"$ref": "#/$defs/duration"},
+        "predictors": {"type": "array", "items": {"$ref": "#/$defs/predictor"}, "maxItems": 16},
+        "parameters": {"type": "object", "description": "Existing method parameters except max_gap_seconds; defaults preserved."},
+        "backend": {"oneOf": [{"$ref": "#/$defs/name"}, {"type": "object", "properties": {"P": {"$ref": "#/$defs/name"}, "T": {"$ref": "#/$defs/name"}}, "required": ["P", "T"], "additionalProperties": false}]},
+        "id": {"type": "string"},
+        "evidence_status": {"enum": ["confirmed_archive", "development_selected"]},
+        "evidence": {"type": "array", "items": {"type": "string"}},
+        "frozen_recipe": {"type": "object"},
+        "frozen_binding": {"type": "object"},
+        "members": {"type": "array", "items": {"$ref": "#/$defs/recipe"}, "minItems": 2, "maxItems": 2}
+      },
+      "required": ["method"],
+      "additionalProperties": false
+    },
+    "route": {
+      "description": "An explicit duration-class route; max_gap defaults to the class upper bound.",
+      "oneOf": [
+        {"type": "object", "properties": {"enabled": {"const": false}, "reason": {"type": "string", "minLength": 1}}, "required": ["enabled"], "additionalProperties": false},
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {"const": true},
+            "method": {}, "max_gap": {}, "predictors": {}, "parameters": {}, "backend": {}, "group": {},
+            "id": {}, "evidence_status": {}, "evidence": {}, "frozen_recipe": {}, "frozen_binding": {}, "members": {},
+            "fallbacks": {"type": "array", "items": {"$ref": "#/$defs/recipe"}, "maxItems": 10}
+          },
+          "required": ["method"],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "routes": {
+      "type": "object",
+      "description": "short: >0..2h, medium: >2h..12h, long: >12h..7d. Undeclared classes have no route.",
+      "properties": {"short": {"$ref": "#/$defs/route"}, "medium": {"$ref": "#/$defs/route"}, "long": {"$ref": "#/$defs/route"}},
+      "additionalProperties": false
+    },
+    "target": {
+      "type": "object",
+      "description": "Per-target settings replace the dataset shorthand for that target as a unit; method/max_gap shorthand and routes cannot be combined.",
+      "properties": {
+        "method": {}, "max_gap": {}, "predictors": {}, "parameters": {}, "backend": {},
+        "fallbacks": {"type": "array", "items": {"$ref": "#/$defs/recipe"}, "maxItems": 10},
+        "routes": {"$ref": "#/$defs/routes"},
+        "group": {"type": "array", "items": {"$ref": "#/$defs/name"}, "minItems": 2, "maxItems": 4, "uniqueItems": true, "description": "Explicit joint target group for T-J or AVG-J; declared once."}
+      },
+      "additionalProperties": false
+    },
+    "column": {
+      "type": "object",
+      "description": "Optional column metadata. Targets inherit it; nothing is converted or guessed.",
+      "properties": {
+        "column": {"type": "string", "minLength": 1, "description": "CSV header; default the declared name."},
+        "unit": {"type": "string", "minLength": 1, "description": "Default unknown."},
+        "unit_regime": {"type": "string", "minLength": 1, "description": "Default native."},
+        "derived_from": {"type": "array", "items": {"$ref": "#/$defs/name"}, "maxItems": 16, "description": "Same-dataset parents; descendants cannot be donors."},
+        "qc": {"type": "object", "properties": {"column": {"type": "string", "minLength": 1}, "accept": {"type": "array", "items": {"type": "string"}, "minItems": 1, "uniqueItems": true}}, "required": ["column", "accept"], "additionalProperties": false},
+        "observed": {"type": "string", "minLength": 1, "description": "Mask column of literal True/False."},
+        "rejected": {"type": "string", "minLength": 1, "description": "Mask column of literal True/False; raw values retained."},
+        "structural": {"type": "string", "minLength": 1, "description": "Mask column of literal True/False."},
+        "regime": {"type": "object", "properties": {"column": {"type": "string", "minLength": 1}, "value": {"type": "string", "minLength": 1}}, "required": ["column", "value"], "additionalProperties": false},
+        "missing": {"$ref": "#/$defs/missing"}
+      },
+      "additionalProperties": false
+    },
+    "dataset": {
+      "type": "object",
+      "properties": {
+        "uri": {"type": "string", "minLength": 1, "description": "Local path, gs://bucket/object or bq://project.dataset.table."},
+        "cadence": {"$ref": "#/$defs/duration", "description": "Required; never inferred."},
+        "targets": {"oneOf": [{"type": "array", "items": {"$ref": "#/$defs/name"}, "maxItems": 64, "uniqueItems": true}, {"type": "object", "additionalProperties": {"$ref": "#/$defs/target"}}], "description": "Required; an empty list does no work. Columns are never filled implicitly."},
+        "enabled": {"type": "boolean", "description": "Default true; false removes the dataset's work."},
+        "method": {}, "max_gap": {}, "predictors": {}, "parameters": {}, "backend": {},
+        "fallbacks": {"type": "array", "items": {"$ref": "#/$defs/recipe"}, "maxItems": 10},
+        "routes": {"$ref": "#/$defs/routes"},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Optional expected hash of the exact bytes."},
+        "generation": {"type": "integer", "minimum": 1, "description": "Optional expected gs:// generation; otherwise captured and pinned."},
+        "timestamp": {"type": "string", "minLength": 1, "description": "Default timestamp."},
+        "timezone": {"type": "string", "description": "Required only for timestamps without offsets: UTC, +HH:MM or an IANA name."},
+        "key": {"type": "string", "minLength": 1, "description": "Optional row-key column; default sha256 prefix and row ordinal."},
+        "group_by": {"type": "string", "minLength": 1, "description": "Series identity column for multi-station files."},
+        "select": {"type": "array", "items": {"$ref": "#/$defs/name"}, "minItems": 1, "maxItems": 64, "uniqueItems": true},
+        "columns": {"type": "object", "additionalProperties": {"$ref": "#/$defs/column"}},
+        "missing": {"$ref": "#/$defs/missing"},
+        "interval": {"$ref": "#/$defs/interval", "description": "Output crop; default the series extent."},
+        "validity": {"$ref": "#/$defs/interval", "description": "Support; default the series extent."},
+        "boundaries": {"type": "array", "items": {"$ref": "#/$defs/instant"}, "maxItems": 256, "description": "Segment/regime boundaries never bridged."},
+        "exclusions": {"$ref": "#/$defs/intervals"},
+        "fit_exclusions": {"$ref": "#/$defs/intervals"},
+        "bigquery": {"type": "object", "properties": {"intervals": {"$ref": "#/$defs/intervals"}}, "required": ["intervals"], "additionalProperties": false},
+        "family": {"type": "string", "minLength": 1, "description": "Descriptive only."}
+      },
+      "required": ["uri", "cadence", "targets"],
+      "additionalProperties": false
+    },
+    "simple": {
+      "type": "object",
+      "properties": {
+        "schema": {"const": "ecofill.simple/1"},
+        "datasets": {"type": "object", "propertyNames": {"pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$"}, "additionalProperties": {"$ref": "#/$defs/dataset"}},
+        "output": {"type": "object", "properties": {"uri": {"type": "string", "minLength": 1}}, "required": ["uri"], "additionalProperties": false},
+        "purpose": {"type": "string", "minLength": 1, "description": "Default unspecified."},
+        "limits": {
+          "type": "object",
+          "description": "Finite defaults: max_gaps 1000, max_method_calls 3000, max_rows_per_series 250000, wall_seconds 900, memory_bytes 536870912, scratch_bytes 33554432, output_bytes 134217728.",
+          "properties": {"max_gaps": {"type": "integer"}, "max_method_calls": {"type": "integer"}, "max_rows_per_series": {"type": "integer"}, "wall_seconds": {"type": "integer"}, "memory_bytes": {"type": "integer"}, "scratch_bytes": {"type": "integer"}, "output_bytes": {"type": "integer"}},
+          "additionalProperties": false
+        },
+        "models": {"type": "object", "description": "As in ecofill.operation/2, including optional purpose."},
+        "allow_provisional": {"type": "boolean"},
+        "cloud": {"type": "object", "description": "As in ecofill.operation/1."}
+      },
+      "required": ["datasets", "output"],
+      "additionalProperties": false
+    },
+    "alias": {
+      "type": "object",
+      "description": "Engineer spelling: role response/target selects targets, driver only declares a column, linear means LIN, mode must be offline.",
+      "properties": {
+        "sources": {"type": "object", "additionalProperties": {
+          "type": "object",
+          "properties": {
+            "uri": {"type": "string", "minLength": 1},
+            "cadence": {"$ref": "#/$defs/duration"},
+            "variables": {"type": "object", "minProperties": 1, "additionalProperties": {
+              "type": "object",
+              "properties": {"unit": {"type": "string", "minLength": 1}, "role": {"enum": ["driver", "response", "target"]}},
+              "required": ["role"], "additionalProperties": false}}
+          },
+          "required": ["uri", "cadence", "variables"], "additionalProperties": false}},
+        "routes": {"type": "object", "additionalProperties": {
+          "type": "object",
+          "properties": {"enabled": {"type": "boolean"}, "method": {"enum": ["linear", "LIN"]}, "mode": {"const": "offline"}, "max_gap": {"$ref": "#/$defs/duration"}},
+          "required": ["method", "max_gap"], "additionalProperties": false}},
+        "output": {"type": "object", "properties": {"uri": {"type": "string", "minLength": 1}}, "required": ["uri"], "additionalProperties": false}
+      },
+      "required": ["sources", "routes", "output"],
+      "additionalProperties": false
+    }
+  }
+}

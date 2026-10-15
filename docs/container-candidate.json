@@ -1,0 +1,15 @@
+{
+  "schema": "ecofill.local-container-candidate/1",
+  "status": "preparation resumed with human-authorized controller correction; qualification not executed",
+  "public_source_commit": null,
+  "guide_commit": null,
+  "local_tag": null,
+  "local_image_id": null,
+  "registry_digest": null,
+  "qualified": false,
+  "gates": {"A": "unstarted", "B": "unstarted", "C": "unstarted", "D": "unstarted", "E": "unstarted", "F": "unstarted"},
+  "limitation": "Container gates remain unstarted; no tested public source commit or image identity exists yet",
+  "old_published_digest": "sha256:950cea24ceeb79a84bb8ad2d1cfdae876033fdf229b2993492838fd4e03dab8c",
+  "bigquery_output_implemented": false,
+  "live_google_acceptance": "untested"
+}

@@ -1,0 +1,2560 @@
+{
+  "type": "object",
+  "properties": {
+    "schema": {
+      "const": "ecofill.operation/2"
+    },
+    "purpose": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Default unspecified. Restricted model weights require non-commercial research here or in the model settings."
+    },
+    "output": {
+      "type": "object",
+      "properties": {
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "uri"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "$ref": "#/$defs/limits"
+    },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/source"
+      }
+    },
+    "datasets": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/dataset"
+      }
+    },
+    "models": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/model"
+      }
+    },
+    "allow_provisional": {
+      "type": "boolean"
+    },
+    "cloud": {
+      "type": "object",
+      "properties": {
+        "transfer_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "decoded_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "model_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max_rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "max_pages": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "page_rows": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000
+        },
+        "transport_attempts": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3
+        },
+        "per_query_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "total_query_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "query_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 14400
+        },
+        "snapshot_utc": {
+          "type": "string",
+          "pattern": "(Z|[+-]00:00)$"
+        },
+        "billing_project": {
+          "type": "string"
+        },
+        "location": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "transfer_bytes",
+        "decoded_bytes",
+        "model_bytes",
+        "max_rows",
+        "max_pages",
+        "page_rows",
+        "transport_attempts",
+        "per_query_bytes",
+        "total_query_bytes",
+        "query_seconds",
+        "snapshot_utc",
+        "billing_project",
+        "location"
+      ],
+      "additionalProperties": false
+    },
+    "resolution": {
+      "type": "object",
+      "description": "Defaults applied, pending or resolved input facts and their provenance.",
+      "properties": {
+        "status": {
+          "enum": [
+            "pending",
+            "resolved"
+          ]
+        },
+        "input_format": {
+          "type": "string",
+          "minLength": 1
+        },
+        "authored_sha256": {
+          "type": "string",
+          "minLength": 1
+        },
+        "implementation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "defaults": {
+          "type": "array"
+        },
+        "pending": {
+          "type": "array"
+        },
+        "inputs": {
+          "type": "object"
+        },
+        "inactive": {
+          "type": "object"
+        },
+        "expanded_identity": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schema",
+    "purpose",
+    "output",
+    "limits",
+    "sources",
+    "datasets",
+    "models"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:ecofill:operation:2",
+  "description": "Structural schema of a resolved generic configuration. Simple input expands to this form; load_config additionally enforces UTC intervals, lineage, physical work uniqueness, dependencies, method-specific support, restricted-model purpose and evidence bindings. resolution.status pending appears only in offline expansions of simple input.",
+  "$defs": {
+    "reference": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instrument": {
+          "type": "string",
+          "minLength": 1
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit_regime": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "source",
+        "instrument",
+        "field",
+        "unit_regime"
+      ],
+      "additionalProperties": false
+    },
+    "field": {
+      "type": "object",
+      "properties": {
+        "column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit_regime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "lineage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "derived_from": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "domains": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string",
+                    "pattern": "(Z|[+-]00:00)$"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "(Z|[+-]00:00)$"
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2,
+                "items": false
+              }
+            }
+          ]
+        },
+        "qc_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rejected_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "structural_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "route_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "route_value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "missing_tokens": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "uniqueItems": true,
+          "contains": {
+            "const": ""
+          },
+          "description": "Exact lexical cells read as unavailable."
+        },
+        "sentinels": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at_most": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "at_most"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "at_least": {
+                    "type": "number"
+                  }
+                },
+                "required": [
+                  "at_least"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "maxItems": 16,
+          "description": "Finite values rejected (raw retained); never implied by 9999/-9999."
+        },
+        "qc_accept": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "description": "Accepted QC codes; required with qc_column."
+        }
+      },
+      "required": [
+        "column",
+        "derived_from",
+        "domains",
+        "lineage",
+        "missing_tokens",
+        "sentinels",
+        "unit",
+        "unit_regime"
+      ],
+      "additionalProperties": false,
+      "dependentRequired": {
+        "qc_column": [
+          "qc_accept"
+        ],
+        "qc_accept": [
+          "qc_column"
+        ],
+        "route_column": [
+          "route_value"
+        ],
+        "route_value": [
+          "route_column"
+        ]
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "aliases": {
+          "type": "array",
+          "maxItems": 0
+        },
+        "validity": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "(Z|[+-]00:00)$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "(Z|[+-]00:00)$"
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2,
+              "items": false
+            }
+          ]
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "pattern": "(Z|[+-]00:00)$"
+              },
+              {
+                "type": "string",
+                "pattern": "(Z|[+-]00:00)$"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2,
+            "items": false
+          }
+        },
+        "fields": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/field"
+          }
+        }
+      },
+      "required": [
+        "aliases",
+        "validity",
+        "exclusions",
+        "fields"
+      ],
+      "additionalProperties": false
+    },
+    "source": {
+      "type": "object",
+      "properties": {
+        "family": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ],
+          "description": "Descriptive only; never a cadence or preparation rule."
+        },
+        "uri": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{64}$"
+        },
+        "identity_column": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "timestamp_column": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key_column": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        },
+        "cadence_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "clock": {
+          "type": "object",
+          "properties": {
+            "timezone": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "string",
+                  "minLength": 1
+                }
+              ]
+            }
+          },
+          "required": [
+            "timezone"
+          ],
+          "additionalProperties": false
+        },
+        "preparation_profile": {
+          "const": "generic-v1"
+        },
+        "policy": {
+          "const": {
+            "version": "ecofill.generic-preparation/1",
+            "origin": "user_supplied",
+            "original_evidence": "user_supplied"
+          }
+        },
+        "instruments": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/metadata"
+          }
+        },
+        "generation": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9223372036854775807
+        },
+        "bigquery": {
+          "type": "object",
+          "properties": {
+            "columns": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,299}$"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "intervals": {
+              "type": "array",
+              "items": {
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "string",
+                    "pattern": "(Z|[+-]00:00)$"
+                  },
+                  {
+                    "type": "string",
+                    "pattern": "(Z|[+-]00:00)$"
+                  }
+                ],
+                "minItems": 2,
+                "maxItems": 2,
+                "items": false
+              }
+            }
+          },
+          "required": [
+            "columns",
+            "intervals"
+          ],
+          "additionalProperties": false
+        },
+        "compressed": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "family",
+        "uri",
+        "identity_column",
+        "timestamp_column",
+        "key_column",
+        "cadence_seconds",
+        "clock",
+        "compressed",
+        "preparation_profile",
+        "policy",
+        "instruments"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "uri": {
+                "pattern": "^bq://"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "bigquery"
+            ],
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "sha256"
+                  ]
+                },
+                {
+                  "required": [
+                    "generation"
+                  ]
+                }
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "sha256"
+            ],
+            "not": {
+              "required": [
+                "bigquery"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "uri": {
+                "pattern": "^gs://"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "generation"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "generation"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "model": {
+      "type": "object",
+      "properties": {
+        "kind": {
+          "enum": [
+            "tabpfn35",
+            "timesfm3"
+          ]
+        },
+        "artifacts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "uri": {
+                "type": "string",
+                "minLength": 1
+              },
+              "sha256": {
+                "type": "string",
+                "pattern": "^[0-9a-f]{64}$"
+              },
+              "generation": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9223372036854775807
+              }
+            },
+            "required": [
+              "uri",
+              "sha256"
+            ],
+            "additionalProperties": false,
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "uri": {
+                      "pattern": "^gs://"
+                    }
+                  }
+                },
+                "then": {
+                  "required": [
+                    "generation"
+                  ]
+                },
+                "else": {
+                  "not": {
+                    "required": [
+                      "generation"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        },
+        "license": {
+          "type": "string",
+          "minLength": 1
+        },
+        "revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "purpose": {
+          "const": "non-commercial research"
+        }
+      },
+      "required": [
+        "kind",
+        "artifacts",
+        "license",
+        "revision"
+      ],
+      "additionalProperties": false
+    },
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "max_gap_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 604800
+        },
+        "window_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 180
+        },
+        "min_rows": {
+          "type": "integer",
+          "minimum": 168,
+          "maximum": 4096
+        },
+        "max_rows": {
+          "type": "integer",
+          "minimum": 168,
+          "maximum": 4096
+        },
+        "seed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        },
+        "n_estimators": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 512
+        },
+        "max_depth": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "min_samples_leaf": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 128
+        },
+        "n_jobs": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1
+        },
+        "context_length": {
+          "type": "integer",
+          "minimum": 32,
+          "maximum": 128
+        },
+        "min_support": {
+          "type": "integer",
+          "minimum": 32,
+          "maximum": 128
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "recipe": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "method": {
+          "enum": [
+            "AVG-J",
+            "AVG-U",
+            "AVG-X",
+            "LIN",
+            "P-U",
+            "P-X",
+            "RF-X",
+            "RF-XL",
+            "T-J",
+            "T-U",
+            "T-X"
+          ]
+        },
+        "targets": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true
+        },
+        "predictors": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/reference"
+          },
+          "maxItems": 16,
+          "uniqueItems": true
+        },
+        "parameters": {
+          "$ref": "#/$defs/parameters"
+        },
+        "evidence_status": {
+          "enum": [
+            "user_configured",
+            "confirmed_archive",
+            "development_selected"
+          ]
+        },
+        "evidence": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        },
+        "backend": {
+          "type": "string",
+          "minLength": 1
+        },
+        "members": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/recipe"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "frozen_recipe": {
+          "$ref": "#/$defs/frozen"
+        },
+        "frozen_binding": {
+          "$ref": "#/$defs/frozen_binding"
+        }
+      },
+      "required": [
+        "id",
+        "method",
+        "targets",
+        "predictors",
+        "parameters",
+        "evidence_status",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "AVG-J"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "AVG-U"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "AVG-X"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "LIN"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "P-U"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "window_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180
+                  },
+                  "min_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 1024
+                  },
+                  "max_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 1024
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "P-X"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "window_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180
+                  },
+                  "min_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 1024
+                  },
+                  "max_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 1024
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "RF-X"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "window_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180
+                  },
+                  "min_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 4096
+                  },
+                  "max_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 4096
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "n_estimators": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 512
+                  },
+                  "max_depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 32
+                  },
+                  "min_samples_leaf": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128
+                  },
+                  "n_jobs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "RF-XL"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "window_days": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 180
+                  },
+                  "min_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 4096
+                  },
+                  "max_rows": {
+                    "type": "integer",
+                    "minimum": 168,
+                    "maximum": 4096
+                  },
+                  "seed": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 2147483647
+                  },
+                  "n_estimators": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 512
+                  },
+                  "max_depth": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 32
+                  },
+                  "min_samples_leaf": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 128
+                  },
+                  "n_jobs": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 1
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "T-J"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "context_length": {
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 128
+                  },
+                  "min_support": {
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 128
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "T-U"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "context_length": {
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 128
+                  },
+                  "min_support": {
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 128
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "const": "T-X"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parameters": {
+                "type": "object",
+                "properties": {
+                  "max_gap_seconds": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 604800
+                  },
+                  "context_length": {
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 128
+                  },
+                  "min_support": {
+                    "type": "integer",
+                    "minimum": 32,
+                    "maximum": 128
+                  }
+                },
+                "required": [],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "frozen_recipe"
+            ],
+            "properties": {
+              "method": {
+                "enum": [
+                  "LIN",
+                  "RF-X",
+                  "RF-XL",
+                  "P-U",
+                  "P-X",
+                  "T-U",
+                  "T-X",
+                  "T-J"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "frozen_binding"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "evidence_status": {
+                "const": "user_configured"
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "frozen_recipe"
+                  ]
+                },
+                {
+                  "required": [
+                    "frozen_binding"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "evidence_status": {
+                "enum": [
+                  "confirmed_archive",
+                  "development_selected"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "frozen_recipe"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "AVG-U",
+                  "AVG-X",
+                  "AVG-J"
+                ]
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "frozen_binding"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "frozen_binding"
+            ]
+          },
+          "then": {
+            "required": [
+              "frozen_recipe"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "LIN",
+                  "RF-X",
+                  "RF-XL",
+                  "P-U",
+                  "P-X",
+                  "T-U",
+                  "T-X",
+                  "T-J"
+                ]
+              },
+              "evidence_status": {
+                "const": "confirmed_archive"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "frozen_recipe": {
+                "properties": {
+                  "status": {
+                    "const": "usable"
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "method": {
+                "enum": [
+                  "LIN",
+                  "RF-X",
+                  "RF-XL",
+                  "P-U",
+                  "P-X",
+                  "T-U",
+                  "T-X",
+                  "T-J"
+                ]
+              },
+              "evidence_status": {
+                "const": "development_selected"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "frozen_recipe": {
+                "properties": {
+                  "status": {
+                    "const": "provisional"
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "frozen": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "T-X"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "backend": "timesfm==3.0.2:TimesFM-3",
+                "device": "cpu",
+                "context_length": 128,
+                "min_support": 32,
+                "context_policy": "adjacent_original",
+                "direction": "both",
+                "blend": "forward*(1-i/(L-1))+backward*i/(L-1); L=1: 0.5 each",
+                "one_sided_support": "abstain",
+                "covariates": "history_plus_horizon",
+                "covariate_issue": "archive_end; original observed retrospective covariates only",
+                "return_quantiles": false,
+                "padding_mode": "none",
+                "use_znorm": false,
+                "make_positive": false,
+                "use_symmetric_averaging": false,
+                "purpose": "non-commercial research"
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "RF-XL"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "parameters": {
+                  "bootstrap": true,
+                  "ccp_alpha": 0.0,
+                  "criterion": "squared_error",
+                  "max_depth": 12,
+                  "max_features": 1.0,
+                  "max_leaf_nodes": null,
+                  "max_samples": null,
+                  "min_impurity_decrease": 0.0,
+                  "min_samples_leaf": 5,
+                  "min_samples_split": 2,
+                  "min_weight_fraction_leaf": 0.0,
+                  "monotonic_cst": null,
+                  "n_estimators": 128,
+                  "n_jobs": 1,
+                  "oob_score": false,
+                  "random_state": 0,
+                  "verbose": 0,
+                  "warm_start": false
+                },
+                "time_features": {
+                  "names": [
+                    "elapsed",
+                    "day_sin",
+                    "day_cos",
+                    "week_sin",
+                    "week_cos"
+                  ],
+                  "origin": "1970-01-01T00:00:00+00:00",
+                  "scale_seconds": 86400.0,
+                  "periods_seconds": [
+                    86400.0,
+                    604800.0
+                  ],
+                  "phase": "elapsed time since origin modulo period"
+                },
+                "window_days": 180,
+                "min_rows": 168,
+                "max_rows": 4096,
+                "selection": "time-ordered evenly spaced eligible rows",
+                "lags": [
+                  "native_step",
+                  "exact_1h",
+                  "exact_24h"
+                ],
+                "novelty": "flag"
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "P-X"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "backend": "tabpfn==9.0.0:TabPFN-3.5",
+                "device": "cpu",
+                "n_estimators": 1,
+                "output_type": "mean",
+                "time_features": {
+                  "names": [
+                    "elapsed",
+                    "day_sin",
+                    "day_cos",
+                    "week_sin",
+                    "week_cos"
+                  ],
+                  "origin": "1970-01-01T00:00:00+00:00",
+                  "scale_seconds": 86400.0,
+                  "periods_seconds": [
+                    86400.0,
+                    604800.0
+                  ],
+                  "phase": "elapsed time since origin modulo period"
+                },
+                "window_days": 180,
+                "min_rows": 168,
+                "max_rows": 1024,
+                "selection": "time-ordered evenly spaced eligible rows",
+                "lags": []
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "P-U"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "backend": "tabpfn==9.0.0:TabPFN-3.5",
+                "device": "cpu",
+                "n_estimators": 1,
+                "output_type": "mean",
+                "time_features": {
+                  "names": [
+                    "elapsed",
+                    "day_sin",
+                    "day_cos",
+                    "week_sin",
+                    "week_cos"
+                  ],
+                  "origin": "1970-01-01T00:00:00+00:00",
+                  "scale_seconds": 86400.0,
+                  "periods_seconds": [
+                    86400.0,
+                    604800.0
+                  ],
+                  "phase": "elapsed time since origin modulo period"
+                },
+                "window_days": 180,
+                "min_rows": 168,
+                "max_rows": 1024,
+                "selection": "time-ordered evenly spaced eligible rows",
+                "lags": []
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "RF-X"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "parameters": {
+                  "bootstrap": true,
+                  "ccp_alpha": 0.0,
+                  "criterion": "squared_error",
+                  "max_depth": 12,
+                  "max_features": 1.0,
+                  "max_leaf_nodes": null,
+                  "max_samples": null,
+                  "min_impurity_decrease": 0.0,
+                  "min_samples_leaf": 5,
+                  "min_samples_split": 2,
+                  "min_weight_fraction_leaf": 0.0,
+                  "monotonic_cst": null,
+                  "n_estimators": 128,
+                  "n_jobs": 1,
+                  "oob_score": false,
+                  "random_state": 0,
+                  "verbose": 0,
+                  "warm_start": false
+                },
+                "time_features": {
+                  "names": [
+                    "elapsed",
+                    "day_sin",
+                    "day_cos",
+                    "week_sin",
+                    "week_cos"
+                  ],
+                  "origin": "1970-01-01T00:00:00+00:00",
+                  "scale_seconds": 86400.0,
+                  "periods_seconds": [
+                    86400.0,
+                    604800.0
+                  ],
+                  "phase": "elapsed time since origin modulo period"
+                },
+                "window_days": 180,
+                "min_rows": 168,
+                "max_rows": 4096,
+                "selection": "time-ordered evenly spaced eligible rows",
+                "lags": [],
+                "novelty": "flag"
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "T-U"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "backend": "timesfm==3.0.2:TimesFM-3",
+                "device": "cpu",
+                "context_length": 128,
+                "min_support": 32,
+                "context_policy": "adjacent_original",
+                "direction": "both",
+                "blend": "forward*(1-i/(L-1))+backward*i/(L-1); L=1: 0.5 each",
+                "one_sided_support": "abstain",
+                "covariates": "history_plus_horizon",
+                "covariate_issue": "archive_end; original observed retrospective covariates only",
+                "return_quantiles": false,
+                "padding_mode": "none",
+                "use_znorm": false,
+                "make_positive": false,
+                "use_symmetric_averaging": false,
+                "purpose": "non-commercial research"
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "LIN"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "endpoints": "original bracketing observations"
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.shortlist/1"
+            },
+            "method": {
+              "const": "T-J"
+            },
+            "targets": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "predictors": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "units": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "cadence_seconds": {
+              "enum": [
+                1800,
+                3600
+              ]
+            },
+            "source_identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "status": {
+              "enum": [
+                "usable",
+                "provisional",
+                "disabled"
+              ]
+            },
+            "settings": {
+              "const": {
+                "max_gap_seconds": 604800,
+                "mode": "offline",
+                "seed": 0,
+                "backend": "timesfm==3.0.2:TimesFM-3",
+                "device": "cpu",
+                "context_length": 128,
+                "min_support": 32,
+                "context_policy": "adjacent_original",
+                "direction": "both",
+                "blend": "forward*(1-i/(L-1))+backward*i/(L-1); L=1: 0.5 each",
+                "one_sided_support": "abstain",
+                "covariates": "history_plus_horizon",
+                "covariate_issue": "archive_end; original observed retrospective covariates only",
+                "return_quantiles": false,
+                "padding_mode": "none",
+                "use_znorm": false,
+                "make_positive": false,
+                "use_symmetric_averaging": false,
+                "purpose": "non-commercial research"
+              }
+            },
+            "support": {
+              "const": "original_only"
+            }
+          },
+          "required": [
+            "schema",
+            "method",
+            "targets",
+            "predictors",
+            "units",
+            "cadence_seconds",
+            "source_identity",
+            "status",
+            "settings",
+            "support"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "schema": {
+              "const": "ecofill.operation.saved_ensemble/1"
+            },
+            "members": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/frozen"
+              }
+            },
+            "weights": {
+              "const": [
+                0.5,
+                0.5
+              ]
+            }
+          },
+          "required": [
+            "schema",
+            "members",
+            "weights"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "route": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "const": false
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "enabled",
+            "reason"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "properties": {
+            "enabled": {
+              "const": true
+            },
+            "duration_seconds": {
+              "type": "object",
+              "properties": {
+                "greater_than": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "at_most": {
+                  "type": "integer",
+                  "maximum": 604800
+                }
+              },
+              "required": [
+                "greater_than",
+                "at_most"
+              ],
+              "additionalProperties": false
+            },
+            "recipe": {
+              "$ref": "#/$defs/recipe"
+            },
+            "fallbacks": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/recipe"
+              },
+              "maxItems": 10
+            }
+          },
+          "required": [
+            "enabled",
+            "duration_seconds",
+            "recipe",
+            "fallbacks"
+          ],
+          "additionalProperties": false
+        }
+      ]
+    },
+    "target": {
+      "type": "object",
+      "properties": {
+        "unit": {
+          "type": "string",
+          "minLength": 1
+        },
+        "unit_regime": {
+          "type": "string",
+          "minLength": 1
+        },
+        "routes": {
+          "type": "object",
+          "properties": {
+            "short": {
+              "$ref": "#/$defs/route"
+            },
+            "medium": {
+              "$ref": "#/$defs/route"
+            },
+            "long": {
+              "$ref": "#/$defs/route"
+            }
+          },
+          "required": [],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "unit",
+        "unit_regime",
+        "routes"
+      ],
+      "additionalProperties": false
+    },
+    "dataset": {
+      "type": "object",
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1
+        },
+        "instruments": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        },
+        "interval": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "type": "string",
+                  "pattern": "(Z|[+-]00:00)$"
+                },
+                {
+                  "type": "string",
+                  "pattern": "(Z|[+-]00:00)$"
+                }
+              ],
+              "minItems": 2,
+              "maxItems": 2,
+              "items": false
+            }
+          ]
+        },
+        "targets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/target"
+          }
+        },
+        "exclusions": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "pattern": "(Z|[+-]00:00)$"
+              },
+              {
+                "type": "string",
+                "pattern": "(Z|[+-]00:00)$"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2,
+            "items": false
+          }
+        },
+        "fit_exclusions": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "prefixItems": [
+              {
+                "type": "string",
+                "pattern": "(Z|[+-]00:00)$"
+              },
+              {
+                "type": "string",
+                "pattern": "(Z|[+-]00:00)$"
+              }
+            ],
+            "minItems": 2,
+            "maxItems": 2,
+            "items": false
+          }
+        }
+      },
+      "required": [
+        "enabled",
+        "source",
+        "instruments",
+        "interval",
+        "targets",
+        "exclusions",
+        "fit_exclusions"
+      ],
+      "additionalProperties": false
+    },
+    "limits": {
+      "type": "object",
+      "properties": {
+        "max_gaps": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_method_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "max_rows_per_series": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "wall_seconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "memory_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "scratch_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "output_bytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        }
+      },
+      "required": [
+        "max_gaps",
+        "max_method_calls",
+        "max_rows_per_series",
+        "wall_seconds",
+        "memory_bytes",
+        "scratch_bytes",
+        "output_bytes"
+      ],
+      "additionalProperties": false
+    },
+    "frozen_binding": {
+      "type": "object",
+      "properties": {
+        "source_identity": {
+          "type": "string",
+          "minLength": 1
+        },
+        "panel_evidence": {
+          "type": "string",
+          "minLength": 1
+        },
+        "predictors": {
+          "type": "object",
+          "maxProperties": 16,
+          "additionalProperties": {
+            "type": "object",
+            "properties": {
+              "ref": {
+                "$ref": "#/$defs/reference"
+              },
+              "identity": {
+                "type": "object",
+                "properties": {
+                  "source": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "instrument": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "physical_field": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "unit_regime": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                },
+                "required": [
+                  "source",
+                  "instrument",
+                  "physical_field",
+                  "unit_regime"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "required": [
+              "ref",
+              "identity"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "source_identity",
+        "panel_evidence",
+        "predictors"
+      ],
+      "additionalProperties": false
+    }
+  }
+}

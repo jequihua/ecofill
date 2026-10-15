@@ -50,6 +50,11 @@ def main(argv=None):
             if args.command == 'validate':
                 config = load_config(args.config)
                 result = {'status': 'valid', 'config_identity': config.identity, 'resolved': config.to_dict()}
+                if config.pending:
+                    # Offline only: input-dependent facts are listed, never reported as verified.
+                    resolution = result['resolved']['resolution']
+                    result.update(input_format=resolution['input_format'], input_facts='pending',
+                                  pending=resolution['pending'])
             elif args.command == 'plan':
                 result = plan(config, output=args.output, transport=transport).to_dict()
             elif args.command == 'run':
@@ -64,9 +69,13 @@ def main(argv=None):
                 result = inspect(args.run_uri, transport=transport)
             print(json.dumps(result, sort_keys=True, allow_nan=False))
             return {'failed': 1, 'partial': 2, 'in_progress': 3, 'incomplete': 3}.get(result.get('status'), 0)
-        except (ValueError, OSError, RuntimeError, KeyError, ImportError) as exc:
-            # Exception text can contain private paths; keep diagnostics typed.
-            print(json.dumps({'status': 'error', 'error_type': type(exc).__name__}))
+        except Exception as exc:
+            # Exception text can contain private paths or values; print only typed errors and
+            # the safe structured diagnostics that validation attaches. Never a traceback.
+            error = {'status': 'error', 'error_type': type(exc).__name__}
+            if isinstance(getattr(exc, 'diagnostic', None), dict):
+                error.update({k: exc.diagnostic[k] for k in ('code', 'location', 'explanation')})
+            print(json.dumps(error, sort_keys=True))
             return 1
 
 if __name__ == '__main__':
