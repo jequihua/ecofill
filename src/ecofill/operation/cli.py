@@ -34,6 +34,12 @@ def main(argv=None):
             if args.command in {'plan', 'run', 'inspect'}:
                 remote_config = getattr(args, 'config', '').startswith('gs://')
                 remote_output = getattr(args, 'run_uri', '').startswith('gs://')
+                if not remote_config:
+                    if getattr(args, 'config_generation', None) is not None or getattr(args, 'config_sha256', None) is not None:
+                        raise ValueError('config generation/hash requires GCS config URI')
+                    # Reject unsupported local-config formats before constructing
+                    # a Google transport or reading an ambient cloud policy.
+                    config = load_config(args.config) if args.command in {'plan', 'run'} else None
                 if remote_config or remote_output or os.environ.get('ECOFILL_CLOUD_POLICY'):
                     from .cloud import CloudTransport
                     from .cloud_config import CloudPolicy
@@ -43,10 +49,6 @@ def main(argv=None):
                 if remote_config:
                     origin = {'uri': args.config, 'generation': args.config_generation, 'sha256': args.config_sha256}
                     config = transport.load_config(args.config, args.config_generation, args.config_sha256)
-                else:
-                    if getattr(args, 'config_generation', None) is not None or getattr(args, 'config_sha256', None) is not None:
-                        raise ValueError('config generation/hash requires GCS config URI')
-                    config = getattr(args, 'config', None)
             if args.command == 'validate':
                 config = load_config(args.config)
                 result = {'status': 'valid', 'config_identity': config.identity, 'resolved': config.to_dict()}

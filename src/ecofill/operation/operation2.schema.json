@@ -15,6 +15,20 @@
         "uri": {
           "type": "string",
           "minLength": 1
+        },
+        "format": {
+          "enum": [
+            "csv-gzip",
+            "parquet"
+          ],
+          "description": "Default csv-gzip."
+        },
+        "publication": {
+          "enum": [
+            "strict",
+            "single_writer"
+          ],
+          "description": "Default strict. single_writer requires local output and external unique-run/single-writer ownership."
         }
       },
       "required": [
@@ -573,6 +587,14 @@
         },
         "compressed": {
           "type": "boolean"
+        },
+        "format": {
+          "enum": [
+            "csv",
+            "csv-gzip",
+            "parquet"
+          ],
+          "description": "Local .parquet is inferred; explicit format persists for extensionless snapshots. Remote Parquet is unsupported."
         }
       },
       "required": [

@@ -1,5 +1,8 @@
 # Simple configuration
 
+For local typed input/output and mounted-volume ownership, see
+[local Parquet operation](local-parquet.md). The existing CSV default is unchanged.
+
 Fill gaps in your own CSV with a few lines of configuration. You name the file,
 its cadence, the columns to fill, one method and the longest gap to fill.
 Everything else has a documented default, and every default is written into

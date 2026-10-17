@@ -39,11 +39,25 @@ def bound(code, limit, message, advice):
 
 def read_source(source, limits):
     path = Path(source['uri'])
+    if source.get('format') == 'parquet' and path.is_dir():
+        raise diagnostic('single_parquet_file_required', pointer('datasets', source_name(source), 'uri'),
+                         'Parquet input must be one closed local file, not a directory or dataset')
     if path.stat().st_size > limits['scratch_bytes']:
         raise bound('source_exceeds_scratch_bytes', 'scratch_bytes', 'source exceeds scratch budget',
                     'the input file is larger than limits.scratch_bytes; use a smaller extract or raise '
                     'limits.scratch_bytes within deployment policy')
-    payload = path.read_bytes()
+    if source.get('format') == 'parquet':
+        # Capture once with an incremental limit, including files growing after stat.
+        pieces, size = [], 0
+        with path.open('rb') as stream:
+            while piece := stream.read(min(1024**2, limits['scratch_bytes'] - size + 1)):
+                size += len(piece)
+                if size > limits['scratch_bytes'] or size * 2 > limits['memory_bytes']:
+                    raise bound('source_capture_limit', 'scratch_bytes', 'source grew beyond the capture limit', 'materialize a smaller immutable file')
+                pieces.append(piece)
+        payload = b''.join(pieces)
+    else:
+        payload = path.read_bytes()
     return decode_source(source, limits, payload, compressed=source.get('compressed', path.suffix == '.gz'))
 
 
@@ -65,6 +79,9 @@ def source_name(source):
 
 def decode_source(source, limits, payload, *, compressed=False, receipt=None):
     """Hash, decode and parse exactly these bytes; a supplied expected hash is enforced first."""
+    if source.get('format') == 'parquet':
+        from .parquet import decode
+        return decode(source, limits, payload, receipt)
     identity = hashlib.sha256(payload).hexdigest()
     generic = source.get('preparation_profile') == GENERIC
     if (source['sha256'] if not generic else source.get('sha256', identity)) != identity:
@@ -234,6 +251,10 @@ def prepare_field(doc, ref, inputs, limits):
 
 def parse_time(text, local, where):
     """ISO 8601 only. Offsets normalize to UTC; naive readings need the declared timezone."""
+    if isinstance(text, datetime):
+        text = text.isoformat()
+    if not isinstance(text, str):
+        raise diagnostic('invalid_timestamp', pointer(*where), 'timestamp must be a supported timestamp string or typed Arrow timestamp')
     match = TIME.fullmatch(text)
     if not match:
         raise diagnostic('invalid_timestamp', pointer(*where), 'timestamps must be ISO 8601, YYYY-MM-DD HH:MM[:SS] '
@@ -276,20 +297,29 @@ def normalize(source, entry, name):
             return entry.normalized[key]
     where = ('datasets', name)
     if identity is None and CONVENTIONAL_IDENTITY in entry.columns:
-        if len({row[CONVENTIONAL_IDENTITY] for row in entry.rows} - {''}) > 1:
+        if len({row[CONVENTIONAL_IDENTITY] for row in entry.rows} - {'', None}) > 1:
             raise diagnostic('multiple_series', pointer(*where), 'the station_id column holds more than one station; '
                              'add group_by: station_id (and optionally select) so each station is filled separately')
     local = None if source['clock']['timezone'] is None else zone(source['clock']['timezone'])
     series, aware, naive, offsets = {}, 0, 0, set()
     for position, row in enumerate(entry.rows):
         key = None if identity is None else row[identity]
+        if entry.receipt.get('format') == 'parquet' and type(key) is int:
+            key = str(key)  # Series labels are text; exact keys remain typed in the audit.
         if wanted is not None and key not in wanted:
             continue
-        if identity is not None and key == '':
+        if identity is not None and key in {'', None}:
             raise diagnostic('empty_series_identity', pointer(*where, 'group_by'), 'a row has an empty group_by value')
         moment, has_offset, offset = parse_time(row[column], local, (*where, 'timestamp'))
         aware += has_offset; naive += not has_offset; offsets.add(offset)
-        series.setdefault(key, []).append((pd.Timestamp(moment), position, row))
+        instant = pd.Timestamp(moment)
+        if entry.receipt.get('format') == 'parquet':
+            try:
+                instant.value
+            except (OverflowError, ValueError):
+                raise diagnostic('timestamp_out_of_range', pointer(*where, 'timestamp'),
+                                 'timestamp is outside the current nanosecond UTC grid range; export a supported interval') from None
+        series.setdefault(key, []).append((instant, position, row))
     if identity is not None and wanted is None and len(series) > MAX_SERIES:
         raise diagnostic('too_many_series', pointer(*where, 'group_by'), f'more than {MAX_SERIES} series; use select')
     cadence = pd.Timedelta(seconds=source['cadence_seconds']).value
@@ -297,6 +327,9 @@ def normalize(source, entry, name):
         if key is not None:
             series_name(key, (*where, 'group_by'))
         items.sort(key=lambda item: item[0])
+        if entry.receipt.get('format') == 'parquet' and items[-1][0].value - items[0][0].value > np.iinfo(np.int64).max:
+            raise diagnostic('timestamp_span_out_of_range', pointer(*where, 'timestamp'),
+                             'timestamp span exceeds the current clock contract; select a narrower interval')
         stamps = np.array([item[0].value for item in items], dtype=np.int64)
         if (np.diff(stamps) == 0).any():
             raise diagnostic('duplicate_timestamp', pointer(*where, 'timestamp'), 'two readings of one series share a '
@@ -379,6 +412,8 @@ def prepare_generic_field(doc, ref, inputs, limits):
     accepted = set(field.get('qc_accept', ()))
     def mask(row, key):
         value = row[field[key]]
+        if entry.receipt.get('format') == 'parquet' and type(value) is bool:
+            return value
         if value not in {'True', 'False'}:
             raise diagnostic('invalid_mask_value', pointer(*where), 'observation/rejection/structural mask cells must '
                              'be literal True or False')
@@ -387,8 +422,14 @@ def prepare_generic_field(doc, ref, inputs, limits):
     for timestamp, position, row in selected:
         value = row[field['column']]
         why = []
-        if value in tokens:
+        typed = entry.receipt.get('format') == 'parquet'
+        if value is None or isinstance(value, str) and value in tokens:
             numeric = np.nan; why.append('original_missing')
+        elif typed and (not isinstance(value, str) or NUMBER.fullmatch(value)):
+            from .parquet import measurement
+            numeric = measurement(value, pointer(*where))
+            if not math.isfinite(numeric):
+                numeric = np.nan; why.append('nonfinite_or_invalid')
         elif NUMBER.fullmatch(value):
             numeric = float(value)
             if not math.isfinite(numeric):
@@ -404,7 +445,10 @@ def prepare_generic_field(doc, ref, inputs, limits):
             why.append('named_sentinel:' + named)
         if 'rejected_column' in field and mask(row, 'rejected_column'):
             rejected = True; why.append('supplied_rejection')
-        if 'qc_column' in field and row[field['qc_column']] not in accepted:
+        qc_value = row.get(field.get('qc_column'))
+        if typed and qc_value is not None and not isinstance(qc_value, str):
+            qc_value = str(qc_value)
+        if 'qc_column' in field and qc_value not in accepted:
             rejected = True; why.append('qc_rejection')
         is_structural = mask(row, 'structural_column') if 'structural_column' in field else False
         supplied = mask(row, 'observed_column') if 'observed_column' in field else finite

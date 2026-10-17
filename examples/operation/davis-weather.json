@@ -1,0 +1,33 @@
+{
+  "datasets": {
+    "davis_weather": {
+      "uri": "/inputs/davis_weather_combined_s2_filt.parquet",
+      "cadence": "1h",
+      "group_by": "station_id",
+      "key": "primary_key",
+      "select": ["RBMNN-AB-01", "RBRL-COL-01"],
+      "interval": ["2025-01-01T00:00:00Z", "2025-04-01T00:00:00Z"],
+      "validity": ["2025-01-01T00:00:00Z", "2025-04-01T00:00:00Z"],
+      "method": "LIN",
+      "max_gap": "48h",
+      "targets": {
+        "temp_out": {},
+        "humidity": {},
+        "dew_point": {},
+        "heat_index": {},
+        "bar": {},
+        "rain": {"method": "LIN", "max_gap": "2h"},
+        "rain_rate": {"method": "LIN", "max_gap": "2h"},
+        "solar_rad": {"method": "LIN", "max_gap": "2h"},
+        "solar_energy": {"method": "LIN", "max_gap": "2h"},
+        "et": {"method": "LIN", "max_gap": "2h"}
+      }
+    }
+  },
+  "output": {"uri": "/output/main", "format": "parquet", "publication": "single_writer"},
+  "limits": {
+    "max_gaps": 3000, "max_method_calls": 2000, "max_rows_per_series": 400000,
+    "wall_seconds": 2700, "memory_bytes": 4294967296,
+    "scratch_bytes": 268435456, "output_bytes": 1073741824
+  }
+}

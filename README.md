@@ -1,5 +1,8 @@
 # ecofill
 
+For typed local files and engineer-managed mounted output, see the
+[local Parquet workflow](docs/local-parquet.md). Earlier images remain unchanged.
+
 ecofill fills gaps in regular environmental time series — meteorology, water
 quality, eddy-covariance fluxes — when a declared method has enough support.
 When it cannot do that safely, it says why. It is built to make every decision

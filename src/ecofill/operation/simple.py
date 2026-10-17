@@ -22,7 +22,7 @@ TOP_KEYS = {'schema', 'datasets', 'output', 'purpose', 'limits', 'models', 'allo
 SHORTHAND = {'method', 'max_gap', 'predictors', 'parameters', 'backend', 'fallbacks'}
 DATASET_KEYS = SHORTHAND | {'uri', 'cadence', 'targets', 'routes', 'enabled', 'sha256', 'generation', 'timestamp',
                             'timezone', 'key', 'group_by', 'select', 'columns', 'missing', 'interval', 'validity',
-                            'boundaries', 'exclusions', 'fit_exclusions', 'bigquery', 'family'}
+                            'boundaries', 'exclusions', 'fit_exclusions', 'bigquery', 'family', 'format'}
 COLUMN_KEYS = {'column', 'unit', 'unit_regime', 'derived_from', 'qc', 'observed', 'rejected', 'structural',
                'regime', 'missing'}
 TARGET_KEYS = SHORTHAND | {'routes', 'group'}
@@ -133,7 +133,7 @@ def from_alias(doc):
     datasets = {}
     for name, source in sources.items():
         where = ['sources', name]
-        obj(source, where, {'uri', 'cadence', 'variables'}, ('uri', 'cadence', 'variables'))
+        obj(source, where, {'uri', 'cadence', 'variables', 'format'}, ('uri', 'cadence', 'variables'))
         variables = source['variables']
         if not isinstance(variables, dict) or not variables:
             fail('invalid_type', [*where, 'variables'], 'declare variables as an object of column names')
@@ -156,6 +156,8 @@ def from_alias(doc):
             fail('no_target_selected', [*where, 'variables'], 'mark at least one variable with role response or target')
         datasets[name] = {'uri': source['uri'], 'cadence': source['cadence'], 'columns': columns,
                           'targets': targets, 'method': 'LIN', 'max_gap': route['max_gap']}
+        if 'format' in source:
+            datasets[name]['format'] = source['format']
         if 'enabled' in route:
             datasets[name]['enabled'] = route['enabled']
     return {'schema': 'ecofill.simple/1', 'datasets': datasets, 'output': doc['output']}
@@ -239,6 +241,10 @@ class Expansion:
         if cadence > 604800:
             fail('unsupported_cadence', [*where, 'cadence'], 'cadence must be at most 7 days')
         parsed.update(uri=uri, cadence=cadence, bigquery=uri.startswith('bq://'))
+        from .parquet import input_format
+        if 'format' in spec and not isinstance(spec['format'], str):
+            fail('unsupported_format', [*where, 'format'], 'format must be csv, csv-gzip or parquet')
+        parsed['format'] = input_format(uri, spec.get('format'), pointer(*where, 'format'))
         parsed['timestamp'] = string(self.opt(spec, 'timestamp', 'timestamp', where), [*where, 'timestamp'], 'timestamp')
         tz = self.opt(spec, 'timezone', None, where)
         if tz is not None:
@@ -492,6 +498,9 @@ class Expansion:
                   'key_column': parsed['key'], 'cadence_seconds': parsed['cadence'],
                   'clock': {'timezone': parsed['timezone']}, 'preparation_profile': GENERIC, 'policy': dict(POLICY),
                   'instruments': {}}
+        if parsed['format'] == 'parquet' or 'format' in parsed['spec']:
+            source['format'] = parsed['format']
+            source['compressed'] = parsed['format'] == 'csv-gzip'
         if parsed['bigquery']:
             source['bigquery'] = {'columns': None, 'intervals': parsed['intervals']}
         elif self.facts is None:
@@ -700,7 +709,7 @@ def expand(doc, kind, facts=None):
     return Expansion(doc, input_format, facts).document()
 
 
-def resolve(config, reader):
+def resolve(config, reader, *, input_observer=None):
     """Read each active source once, derive input facts, and return the resolved operation/2 config."""
     from .config import input_format
     from .preparation import normalize
@@ -716,8 +725,12 @@ def resolve(config, reader):
         except FileNotFoundError:
             unavailable.append(name)
             continue
+        if input_observer is not None:
+            input_observer(name, inputs[name])
         normalized = normalize(source, inputs[name], name)
         receipt = {k: inputs[name].receipt[k] for k in ('sha256', 'bytes', 'rows') if k in inputs[name].receipt}
+        if inputs[name].receipt.get('format') == 'parquet':
+            receipt.update(format='parquet', decoding=inputs[name].receipt['decoding'])
         if 'generation' in inputs[name].receipt:
             receipt['generation'] = inputs[name].receipt['generation']
         receipt['clock'] = normalized['clock']

@@ -103,13 +103,38 @@ class RecordingBackend:
         return output
 
 
-def prepare_operation(config, *, source_reader=None):
+def prepare_operation(config, *, source_reader=None, input_observer=None):
     config = load_config(config)
+    if config.to_dict()['output'].get('format') == 'parquet':
+        from .parquet import arrow
+        arrow()
     inputs, unavailable = {}, []
+    captured = {}
+    retained_memory = 0
+    reader = source_reader or read_source
+    def read_once(source, limits):
+        nonlocal retained_memory
+        if source.get('format') != 'parquet':
+            return reader(source, limits)
+        remaining = limits['memory_bytes'] - retained_memory
+        if remaining <= 0:
+            raise limit_stop('memory_bytes', 'parquet_inputs_exceed_memory_bytes', 'active Parquet inputs together exceed limits.memory_bytes; narrow the work')
+        bounded = limits | {'memory_bytes': remaining}
+        keys = (file_locator(source), os.path.normcase(os.path.realpath(source['uri'])))
+        previous = next((captured[k] for k in keys if k in captured), None)
+        if previous is not None:
+            from .preparation import decode_source
+            entry = decode_source(source, bounded, previous.payload)
+        else:
+            entry = reader(source, bounded)
+            for key in keys:
+                captured[key] = entry
+        retained_memory += entry.receipt['decoding']['retained_memory_bytes']
+        return entry
     if config.pending:
         # Simple input: read each active source once and resolve input facts from those bytes.
         from .simple import resolve
-        config, inputs, unavailable = resolve(config, source_reader or read_source)
+        config, inputs, unavailable = resolve(config, read_once, input_observer=input_observer)
     doc = config.to_dict(); limits = doc['limits']
     generic = doc['schema'] == 'ecofill.operation/2'
     if generic:
@@ -119,9 +144,12 @@ def prepare_operation(config, *, source_reader=None):
     sources = {ref['source'] for ref in refs}
     for name in sorted(sources - set(inputs)):
         try:
-            inputs[name] = (source_reader or read_source)(doc['sources'][name], limits)
+            inputs[name] = read_once(doc['sources'][name], limits)
         except FileNotFoundError:
             unavailable.append(name)
+        else:
+            if input_observer is not None:
+                input_observer(name, inputs[name])
     if sum(len(source.payload) for source in inputs.values()) > limits['scratch_bytes']:
         raise limit_stop('scratch_bytes', 'inputs_exceed_scratch_bytes', 'the active inputs together exceed '
                          'limits.scratch_bytes; remove or narrow datasets, or raise limits.scratch_bytes')
@@ -134,7 +162,7 @@ def prepare_operation(config, *, source_reader=None):
                 fields[digest(ref)] = prepare_field(doc, ref, inputs, limits)
             except FileNotFoundError:
                 unavailable.append(ref['source'])
-    if sum(len(pair[0].data.raw) * 512 for pair in fields.values()) > limits['memory_bytes']:
+    if retained_memory + sum(len(pair[0].data.raw) * 512 for pair in fields.values()) > limits['memory_bytes']:
         raise limit_stop('memory_bytes_estimate', 'prepared_inputs_exceed_memory_bytes', 'the conservative estimate '
                          'of 512 bytes per prepared grid row exceeds limits.memory_bytes; narrow datasets, series or '
                          'interval, or raise limits.memory_bytes')
@@ -256,8 +284,9 @@ def limit_stop(name, code, explanation):
 def make_operation_plan(config, *, output=None, source_reader=None):
     plan, inputs, _ = prepare_operation(config, source_reader=source_reader)
     if output is not None:
+        check_output_overlap(plan.config.to_dict(), output)
         root = Path(output); root.mkdir(parents=True, exist_ok=False)
-        writer = Writer(root, plan.config.to_dict()['limits']['output_bytes'])
+        writer = local_writer(root, plan.config.to_dict())
         writer.write('config.resolved.json', plan.config.to_dict())
         if plan.config.authored_json is not None:
             writer.write('config.authored.json', json.loads(plan.config.authored_json))
@@ -265,7 +294,36 @@ def make_operation_plan(config, *, output=None, source_reader=None):
             writer.write('inputs/' + name + '.snapshot', source.payload)
         writer.write('input_manifest.json', plan.to_dict()['inputs'])
         writer.write('plan.json', plan.to_dict())
+        doc = plan.config.to_dict()
+        if doc['output'].get('publication') == 'single_writer' or doc['output'].get('format') == 'parquet':
+            writer.write('request.json', {'schema': 'ecofill.operation.plan_request/1', 'mode': 'plan',
+                                          'config_identity': plan.config.identity}, terminal=True)
+            writer.write('provenance.json', provenance(), terminal=True)
+            writer.finish('complete', {'status': 'complete', 'mode': 'plan', 'datasets_processed': len(plan.to_dict()['partitions']),
+                                      'original_gaps': plan.to_dict()['planned_gaps'], 'filled_gaps': 0, 'filled_cells': 0,
+                                      'elapsed_seconds': 0, 'method_calls': 0, 'unresolved_reasons': {}})
     return plan
+
+
+def local_writer(root, doc):
+    limits = doc['limits']
+    writer = Writer(root, limits['output_bytes'], publication=doc['output'].get('publication', 'strict'),
+                    scratch_limit=limits['scratch_bytes'], memory_limit=limits['memory_bytes'])
+    if doc['output'].get('format') == 'parquet':
+        writer.table_format = 'parquet'
+        writer.partition_index = []
+    return writer
+
+
+def check_output_overlap(doc, destination):
+    if doc['schema'] == 'ecofill.operation/2':
+        output = Path(destination).resolve()
+        for source in doc['sources'].values():
+            if '://' not in source['uri']:
+                path = Path(source['uri']).resolve()
+                if path == output or path.is_relative_to(output) or output.is_relative_to(path):
+                    from .config import diagnostic
+                    raise diagnostic('input_output_overlap', '/output/uri', 'input and output paths overlap; use a separate fresh result directory')
 
 
 def backend_for(recipe, doc, supplied, cache):
@@ -325,7 +383,7 @@ def provenance():
     package = Path(__file__).resolve().parents[1]
     files = ['operation/config.py', 'operation/cloud_config.py', 'operation/cloud.py', 'operation/deployment.py',
              'operation/__init__.py', 'operation/cli.py', 'operation/schema.json', 'operation/simple.py',
-             'operation/simple_example.py',
+             'operation/simple_example.py', 'operation/parquet.py', 'operation/parquet_example.py',
              'operation/simple.schema.json', 'operation/operation2.schema.json',
              'operation/preparation.py', 'operation/recipes.py', 'operation/runner.py',
              'operation/bundle.py', 'shortlist.py', 'batch.py', 'drivers.py', 'time_indexed.py',
@@ -361,6 +419,7 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
         request.update(config_origin=transport.config_origin, image_digest=implementation['image_digest'],
                        image_id=implementation['image_id'],
                        deployment_policy_identity=digest(asdict(transport.policy)))
+    parquet_writer = None
     if doc['output']['uri'].startswith('gs://'):
         if transport is None:
             raise ValueError('cloud output requires explicit transport')
@@ -368,11 +427,9 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
         if previous is not None:
             return previous
     else:
+        check_output_overlap(doc, doc['output']['uri'])
         root = Path(doc['output']['uri']) / 'runs' / run_id
-        root.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            root.mkdir()
-        except FileExistsError:
+        def previous_run():
             if not (root / 'request.json').is_file():
                 return {'status': 'in_progress', 'run_uri': str(root)}
             if json.loads((root / 'request.json').read_text()) != request:
@@ -380,7 +437,19 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
             if not (root / 'terminal.json').is_file():
                 return {'status': 'in_progress', 'run_uri': str(root)}
             return inspect_bundle(root)
-        writer = Writer(root, limits['output_bytes'])
+        if root.exists():
+            return previous_run()
+        if doc['output'].get('format') == 'parquet':
+            from .parquet import WRITER, ROW_GROUP, arrow
+            pa, _ = arrow()  # No new claim or output write until the extra is available.
+            parquet_writer = WRITER | {'arrow': pa.__version__, 'row_group_size': ROW_GROUP,
+                                       'timestamp': 'timestamp[us, UTC]'}
+        root.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            root.mkdir()
+        except FileExistsError:
+            return previous_run()
+        writer = local_writer(root, doc)
         writer.write('request.json', request, terminal=True)
     if config.authored_json is not None:
         writer.write('config.authored.json', json.loads(config.authored_json), terminal=True)
@@ -390,16 +459,24 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
     attempted_partitions, published_partitions, secondary_failures = [], [], []
     status, failure, stopped, explained = 'complete', None, False, None
     plan = None
+    snapshotted = set()
+    def snapshot_input(name, entry):
+        if entry.receipt.get('format') == 'parquet':
+            # Retain the captured evidence even if measurement preparation rejects it.
+            writer.write('inputs/' + name + '.snapshot', entry.payload)
+            snapshotted.add(name)
     try:
         if transport is not None:
             transport.preflight(doc, request)
-        plan, inputs, partitions = prepare_operation(config, source_reader=None if transport is None else transport.read_source)
+        plan, inputs, partitions = prepare_operation(config, source_reader=None if transport is None else transport.read_source,
+                                                     input_observer=snapshot_input)
         if plan.to_dict()['unavailable_inputs_or_partitions']:
             status = 'partial'
         writer.write('plan.json', plan.to_dict())
         writer.write('input_manifest.json', {'schema': 'ecofill.operation.inputs/1', 'sources': plan.to_dict()['inputs']})
         for name, source in inputs.items():
-            writer.write('inputs/' + name + '.snapshot', source.payload)
+            if name not in snapshotted:
+                writer.write('inputs/' + name + '.snapshot', source.payload)
         for partition in partitions:
             attempted_partitions.append(partition['id'])
             data = partition['data']; dataset = partition['dataset']; index = data.raw.index
@@ -542,6 +619,8 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
                            'runtime_backends': runtime, 'failure_type': failure,
                            'secondary_failures': secondary_failures,
                            'input_manifest_identity': None if plan is None else digest(plan.to_dict()['inputs'])}
+    if parquet_writer is not None:
+        prov['parquet_writer'] = parquet_writer
     counts = Counter(e['final_reason'] for e in audit if e['final_reason'])
     summary = {'schema': 'ecofill.operation.summary/1', 'status': status, 'run_id': run_id,
                'config_identity': config.identity, 'purpose': doc['purpose'], 'datasets_processed': len(completed_partitions),
@@ -564,29 +643,50 @@ def run_operation(config, *, run_id, backends=None, transport=None, config_origi
         writer.write('provenance.json', prov, terminal=True)
         writer.finish(status, summary)
     except Exception as publication:
-        if status != 'failed':
+        if status != 'failed' and doc['output'].get('publication') != 'single_writer':
             raise
         secondary_failures.append({'stage': 'terminal', 'error_type': type(publication).__name__})
-        summary['terminal_published'] = False
+        summary.update(status='failed', terminal_published=False)
+        if failure is None:
+            summary['failure_type'] = type(publication).__name__
     return summary
 
 
 def publish_partition(writer, prefix, data, completed, reconstructed, disposition,
                       partition, partition_audit, output_rows, targets):
     dataset, index = partition['dataset'], data.raw.index
-    writer.csv(prefix + 'raw.csv.gz', data.raw.loc[output_rows, targets])
-    writer.csv(prefix + 'completed.csv.gz', completed.loc[output_rows, targets])
+    parquet = getattr(writer, 'table_format', None) == 'parquet'
+    def table(name, frame, kind):
+        if parquet:
+            from .parquet import write_frame
+            write_frame(writer, prefix + name + '.parquet', frame, kind)
+        else:
+            writer.csv(prefix + name + '.csv.gz', frame)
+    table('raw', data.raw.loc[output_rows, targets], 'numeric')
+    table('completed', completed.loc[output_rows, targets], 'numeric')
     for name in ('observed', 'qc_rejected', 'structural', 'artificial', 'inserted'):
         original_mask = pd.DataFrame({n: partition['target_masks'][n][name] for n in targets}, index=index)
-        writer.csv(prefix + name + '.csv.gz', original_mask.loc[output_rows, targets])
-    writer.csv(prefix + 'reconstructed.csv.gz', reconstructed.loc[output_rows, targets])
-    writer.csv(prefix + 'cell_states.csv.gz', pd.DataFrame(np.where(reconstructed, 'reconstructed',
-        np.where(data.mask('donor'), 'observed', 'unresolved')), index=index, columns=completed.columns).loc[output_rows, targets])
-    writer.csv(prefix + 'dispositions.csv.gz', disposition.loc[output_rows, targets])
+        table(name, original_mask.loc[output_rows, targets], 'mask')
+    table('reconstructed', reconstructed.loc[output_rows, targets], 'mask')
+    table('cell_states', pd.DataFrame(np.where(reconstructed, 'reconstructed',
+        np.where(data.mask('donor'), 'observed', 'unresolved')), index=index, columns=completed.columns).loc[output_rows, targets], 'text')
+    table('dispositions', disposition.loc[output_rows, targets], 'text')
     writer.write(prefix + 'gaps.json', partition_audit)
     writer.write(prefix + 'source_reasons.json', partition['reasons'])
-    writer.write(prefix + 'schema.json', {'schema': 'ecofill.operation.dataset/1',
+    metadata = {'schema': 'ecofill.operation.dataset/1',
         'clock': 'UTC', 'interval': dataset['interval'], 'cadence_seconds': data.schema.cadence.total_seconds(),
         'fields': {n: {'unit': dataset['targets'][n]['unit'], 'dtype': 'float64',
                       'unit_regime': dataset['targets'][n]['unit_regime']} for n in targets},
-        'masks': 'boolean', 'source_keys': 'source_reasons.json', 'support': 'original_only'})
+        'masks': 'boolean', 'source_keys': 'source_reasons.json', 'support': 'original_only'}
+    if parquet:
+        metadata.update(dataset=partition['dataset_id'], source=dataset['source'], series=partition['instrument'],
+                        format='parquet', files={n: n + '.parquet' for n in
+                        ('raw', 'completed', 'observed', 'qc_rejected', 'structural', 'artificial', 'inserted',
+                         'reconstructed', 'cell_states', 'dispositions')})
+    writer.write(prefix + 'schema.json', metadata)
+    if parquet:
+        writer.partition_index.append({'dataset': partition['dataset_id'], 'source': dataset['source'], 'series': partition['instrument'],
+                                       'files': {name: prefix + path for name, path in metadata['files'].items()},
+                                       'fields': metadata['fields'], 'schema': prefix + 'schema.json',
+                                       'source_keys': prefix + 'source_reasons.json',
+                                       'inserted_keys': 'no original source key; see inserted mask and timestamp-key audit'})

@@ -1,5 +1,13 @@
 # Test a local container candidate
 
+The current Parquet image is available from Artifact Registry; see
+[registry download and local-file testing](registry-local-test.md). This page
+retains the earlier simple-configuration candidate's build qualification.
+
+For a new typed-file build and explicit single-writer mounted output, use
+[local Parquet testing](local-parquet.md). The candidate receipt and selected
+source below remain historical; that image has not acquired Parquet support.
+
 The simple configuration workflow is available in public source. A Git update
 does not update an existing container. See [container-candidate.json](container-candidate.json)
 for the observed build-source commit, local image ID, qualification and limitations.

@@ -1791,6 +1791,15 @@
       "requires": [
         "packaging >= 24.0"
       ]
+    },
+    {
+      "name": "pyarrow",
+      "version": "25.0.1",
+      "filename": "pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl",
+      "sha256": "5389cdf79447ed1515c9e31620e6e1e2302249564d603f2ad727d4f6d313e4c3",
+      "bytes": 50102437,
+      "license": "Apache-2.0",
+      "requires": []
     }
   ]
 }

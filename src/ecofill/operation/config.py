@@ -440,7 +440,16 @@ def _validate_envelope(doc, trail):
     if type(doc.setdefault('allow_provisional', False)) is not bool:
         raise ValueError('allow_provisional must be boolean')
     trail[:] = ['output']
-    keys(doc['output'], ('uri',))
+    generic = doc['schema'] == 'ecofill.operation/2'
+    keys(doc['output'], ('uri',), ('format', 'publication') if generic else ())
+    if generic:
+        output = doc['output']
+        if output.get('format', 'csv-gzip') not in {'csv-gzip', 'parquet'}:
+            raise diagnostic('unsupported_format', '/output/format', 'output format must be csv-gzip or parquet')
+        if output.get('publication', 'strict') not in {'strict', 'single_writer'}:
+            raise diagnostic('unsupported_publication', '/output/publication', 'publication must be strict or single_writer')
+        if '://' in output['uri'] and (output.get('format') == 'parquet' or output.get('publication') == 'single_writer'):
+            raise diagnostic('local_output_required', '/output', 'Parquet and single_writer require a local output path; engineers own remote materialization')
     text(doc['output']['uri'])
     if doc['output']['uri'].startswith('gs://'):
         from .cloud_config import gcs_uri
@@ -723,7 +732,7 @@ def physical_conflicts(doc, locate):
     for name, source in doc['sources'].items():
         locator = locate(source)
         scheme = canonical([source[k] for k in ('identity_column', 'timestamp_column', 'cadence_seconds', 'clock',
-                                                'compressed')])
+                                                'compressed')] + [source.get('format', 'csv-gzip' if source['compressed'] else 'csv')])
         if schemes.setdefault(locator, scheme) != scheme:
             raise diagnostic('conflicting_source_declarations', pointer('datasets', name), 'the same input is declared '
                              'more than once with different timestamp, series, cadence, timezone or compression '
@@ -788,7 +797,7 @@ def _validate_generic_source(source_name, source, cloud, trail, pending):
     from .cloud_config import gcs_uri, validate_artifact, validate_source
     from .simple import zone
     keys(source, ('family', 'uri', 'identity_column', 'timestamp_column', 'key_column', 'cadence_seconds', 'clock',
-                  'compressed', 'preparation_profile', 'policy', 'instruments'), ('sha256', 'generation', 'bigquery'))
+                  'compressed', 'preparation_profile', 'policy', 'instruments'), ('sha256', 'generation', 'bigquery', 'format'))
     if source['preparation_profile'] != GENERIC:
         raise ValueError('operation/2 supports the generic-v1 profile; project profiles remain operation/1')
     if source['family'] is not None:
@@ -796,6 +805,15 @@ def _validate_generic_source(source_name, source, cloud, trail, pending):
     integer(source['cadence_seconds'], 1, 604800)
     if type(source['compressed']) is not bool:
         raise ValueError('compressed must be boolean')
+    from .parquet import input_format
+    if 'format' in source and not isinstance(source['format'], str):
+        raise diagnostic('unsupported_format', pointer('sources', source_name, 'format'), 'format must be csv, csv-gzip or parquet')
+    kind = input_format(source['uri'], source.get('format'), pointer('sources', source_name, 'format'))
+    if kind == 'parquet' and source['compressed'] or 'format' in source and source['compressed'] != (kind == 'csv-gzip'):
+        raise diagnostic('unsupported_compression', pointer('sources', source_name, 'compressed'),
+                         'Parquet uses internal compression; CSV compression must agree with format')
+    if kind == 'parquet':
+        source['format'] = kind
     text(source['timestamp_column'])
     for k in ('identity_column', 'key_column'):
         if source[k] is not None:

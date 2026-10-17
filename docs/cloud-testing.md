@@ -1,5 +1,14 @@
 # Test the published ecofill runner
 
+**Historical release guide:** the image and cloud drafts below belong to the
+superseded first release. For the current published Parquet image, use
+[registry download and local-file testing](registry-local-test.md). Do not run
+the old image commands below; historical release receipts remain unchanged.
+
+Engineers who materialize local Parquet or own a bucket mount can use the
+[local Parquet workflow](local-parquet.md) in a newly built candidate. The published
+image and these cloud drafts retain their existing image and contract.
+
 For the newer simple configuration workflow, start with [local container testing](container-testing.md)
 and its candidate receipt. That local candidate has no published registry URI;
 the existing drafts below retain the older published image.

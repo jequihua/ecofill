@@ -156,3 +156,12 @@ or use a checkpoint.
 
 No measurements, private inputs or model outputs from real sites are included.
 All examples and tests generate small synthetic series.
+
+## Optional Apache Arrow / PyArrow
+
+PyArrow 25.0.1 supplies the optional local Parquet reader/writer (Apache-2.0).
+The binary wheel carries Apache Arrow and bundled third-party license/NOTICE files
+in its installed dist-info/licenses and pyarrow directories; retain those files
+when redistributing the dependency. See https://arrow.apache.org/ and
+https://github.com/apache/arrow/blob/apache-arrow-25.0.1/LICENSE.txt.
+No Arrow code or wheel is vendored in the ecofill package.

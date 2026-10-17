@@ -1,5 +1,8 @@
 # Batch operation and cloud handoff
 
+Local typed files and explicit mounted-volume publication are documented in
+[local Parquet operation](local-parquet.md); strict legacy CSV remains supported.
+
 For selected-source local Docker testing, both shell command paths and the
 candidate's observed qualification, see [container testing](container-testing.md).
 
